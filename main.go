@@ -94,10 +94,11 @@ func runReport(args []string) {
 	if *hours <= 0 {
 		*hours = 24
 	}
-	rows := l.rows(now, loc, now.Add(-time.Duration(*hours)*time.Hour), now.UTC().Format("2006-01"), byPub, byIP)
+	selMonth := now.UTC().Format("2006-01")
+	rows := l.rows(now, loc, now.Add(-time.Duration(*hours)*time.Hour), selMonth, byPub, byIP)
 	if *jsonOut {
 		_ = json.NewEncoder(os.Stdout).Encode(rows)
 		return
 	}
-	printTable(now, loc, rows)
+	printTable(now, loc, selMonth, rows)
 }

@@ -38,7 +38,7 @@ Common flags: `-i <iface>`, `-config <server.conf>` (peer names), `-data <ledger
 
 ## Building
 
-Static assets are embedded via `go:embed`, so a plain Go build bundles the web page too — no Node.js toolchain. Requires Go 1.23+.
+Static assets are embedded via `go:embed`, so a plain Go build bundles the web page too — no Node.js toolchain. Requires Go 1.23+ 
 
 ```sh
 make          # build ./tallyawg for the host

@@ -1,3 +1,3 @@
-module github.com/blackkriger/tallyawg
+module github.com/blackkriger/tally-a-wg
 
 go 1.23

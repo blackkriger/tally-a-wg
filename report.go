@@ -16,11 +16,10 @@ func human(n int64) string {
 	return fmt.Sprintf("%.1f PiB", f)
 }
 
-func printTable(now time.Time, loc *time.Location, rows []Row) {
+func printTable(now time.Time, loc *time.Location, selMonth string, rows []Row) {
 	tnow := now.In(loc)
-	mon := tnow.Format("2006-01")
 	fmt.Printf("per-peer traffic ledger (persistent, %s) - down=peer download, up=peer upload\n\n", tnow.Format("MST"))
-	fmt.Printf("%-16s%-12s%-13s%-12s%-16s%-11s\n", "PEER", "ADDRESS", "TOTAL down", "TOTAL up", "MONTH "+mon, "TODAY")
+	fmt.Printf("%-16s%-12s%-13s%-12s%-16s%-11s\n", "PEER", "ADDRESS", "TOTAL down", "TOTAL up", "MONTH "+selMonth, "TODAY")
 	fmt.Println("------------------------------------------------------------------------------------------")
 	if len(rows) == 0 {
 		fmt.Println("(no data yet - the collector runs on a timer; check back after the first run)")
