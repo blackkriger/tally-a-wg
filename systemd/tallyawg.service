@@ -1,0 +1,18 @@
+[Unit]
+Description=tally(a)wg - per-peer traffic accounting + web page
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Flags live here (TALLYAWG_FLAGS=...); leading '-' makes the file optional.
+EnvironmentFile=-/etc/tallyawg/tallyawg.env
+ExecStart=/usr/local/bin/tallyawg serve $TALLYAWG_FLAGS
+Restart=on-failure
+RestartSec=5
+# `wg/awg show` needs CAP_NET_ADMIN; simplest is to run as root.
+User=root
+StateDirectory=tallyawg
+
+[Install]
+WantedBy=multi-user.target

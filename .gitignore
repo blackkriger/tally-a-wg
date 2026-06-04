@@ -1,0 +1,14 @@
+# build artifacts
+/tallyawg
+/tallyawg.exe
+/tallyawg-linux-amd64
+/dist/
+
+# bin/ holds local build+deploy scripts (with server addresses) and binaries
+/bin/
+
+*.test
+
+# local runtime data
+/data/
+*.ledger.json

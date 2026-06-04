@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tally(a)wg</title>
+<style>
+  :root {
+    --bg:#ffffff; --fg:#1b1b1b; --muted:#8a8a8a; --line:#ececec; --hover:#f7f7f7;
+    --accent:#d32f2f; --bar-bg:#efefef; --on:#1aa251;
+    --ctrl:#f1f1f1; --ctrl-fg:#555; --ctrl-bd:#dcdcdc;
+  }
+  html[data-theme="dark"] {
+    --bg:#12161d; --fg:#e8e8e8; --muted:#7e8aa0; --line:#222c3a; --hover:#171e29;
+    --accent:#ff6b6b; --bar-bg:#222c3a; --on:#3ddc84;
+    --ctrl:#1c2531; --ctrl-fg:#9fb0c8; --ctrl-bd:#2a3547;
+  }
+  * { box-sizing:border-box; }
+  body { font-family:system-ui,"Segoe UI",Arial,sans-serif; background:var(--bg); color:var(--fg);
+         margin:0; padding:20px 24px; transition:background .15s,color .15s; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  .logo { font-size:24px; font-weight:700; letter-spacing:.3px; }
+  .logo .suf { color:var(--accent); }
+  .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .field { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+  .step { display:inline-flex; align-items:stretch; border:1px solid var(--ctrl-bd); border-radius:7px;
+          overflow:hidden; background:var(--ctrl); }
+  .step input { width:46px; border:0; background:transparent; color:var(--fg); text-align:center;
+                font:inherit; font-size:13px; padding:5px 4px; }
+  .arrows { display:flex; flex-direction:column; border-left:1px solid var(--ctrl-bd); }
+  .arrows button { border:0; background:transparent; color:var(--ctrl-fg); cursor:pointer; line-height:1;
+                   font-size:9px; padding:0 6px; height:50%; }
+  .arrows button:hover { color:var(--fg); }
+  .btn { border:0; background:var(--ctrl); color:var(--ctrl-fg); width:36px; height:32px;
+         border-radius:8px; cursor:pointer; font-size:15px; line-height:1; }
+  .meta { display:flex; justify-content:space-between; align-items:baseline; gap:14px;
+          flex-wrap:wrap; color:var(--muted); font-size:13px; margin:14px 0; }
+  .wrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; }
+  th,td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.4px; }
+  th[data-key] { cursor:pointer; user-select:none; }
+  th[data-key]:hover { color:var(--fg); }
+  .si { color:var(--accent); }
+  td.num { font-variant-numeric:tabular-nums; }
+  td.total { color:var(--accent); font-weight:700; }
+  tr:hover td { background:var(--hover); }
+  /* pin value/status columns so changing numbers never reflow the table */
+  #tbl tr > :nth-child(2) { min-width:150px; }                          /* Status         */
+  #tbl tr > :nth-child(3), #tbl tr > :nth-child(4) { min-width:220px; } /* Session, Total */
+  #tbl tr > :nth-child(7) { min-width:120px; }                          /* Today          */
+  #tbl tr > :nth-child(8) { min-width:162px; }                          /* Month          */
+  /* flash a cell when its value changes */
+  @keyframes bump { 0% { background:color-mix(in srgb, var(--accent) 26%, transparent); } 100% { background:transparent; } }
+  td.bump { animation:bump 1.1s ease-out; }
+  .peer { font-weight:600; }
+  .ip,.muted,.up { color:var(--muted); }
+  .ep { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+  .stag { font-size:10px; text-transform:uppercase; letter-spacing:.3px; color:var(--muted); margin-bottom:2px; }
+  .bar { height:5px; border-radius:3px; background:var(--bar-bg); margin-top:5px; overflow:hidden; min-width:90px; }
+  .bar>span { display:block; height:100%; background:var(--accent); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; background:var(--muted); }
+  .dot.on { background:var(--on); }
+  .st-on { color:var(--on); font-weight:600; }
+  .mnav { display:inline-flex; gap:1px; margin-right:7px; vertical-align:middle; }
+  .mnav button { border:0; background:transparent; color:var(--fg); cursor:pointer; font-size:12px;
+                 line-height:1; padding:1px 3px; border-radius:4px; }
+  .mnav button:hover:not(:disabled) { color:var(--accent); background:var(--hover); }
+  .mnav button:disabled { color:var(--muted); cursor:default; }
+  .empty { color:var(--muted); padding:20px 0; }
+  footer { margin-top:20px; color:var(--muted); font-size:12px; line-height:1.85; }
+  footer .legrow { display:flex; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  footer b { color:var(--fg); font-weight:600; }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo">tally<span class="suf" id="suf">(a)wg</span></div>
+    <div class="controls">
+      <span class="field">UTC
+        <span class="step">
+          <input id="tzin" inputmode="numeric" value="+0" title="hours offset from UTC">
+          <span class="arrows"><button id="tzup" type="button">&#9650;</button><button id="tzdn" type="button">&#9660;</button></span>
+        </span>
+      </span>
+      <button class="btn" id="themebtn" title="toggle theme">&#9789;</button>
+    </div>
+  </header>
+
+  <div class="meta">
+    <span id="metaleft">loading&hellip;</span>
+    <span id="metaright"></span>
+  </div>
+
+  <div class="wrap">
+    <table id="tbl" hidden>
+      <thead><tr>
+        <th data-key="peer">Peer<span class="si"></span></th>
+        <th data-key="status">Status<span class="si"></span></th>
+        <th data-key="session">Session<span class="si"></span></th>
+        <th data-key="total">Total<span class="si"></span></th>
+        <th data-key="ip">Address<span class="si"></span></th>
+        <th data-key="endpoint">Endpoint<span class="si"></span></th>
+        <th data-key="today">Today<span class="si"></span></th>
+        <th data-key="month">
+          <span class="mnav"><button id="mdn" type="button" title="older">&#9660;</button><button id="mup" type="button" title="newer">&#9650;</button></span>
+          Month <span id="msel"></span><span class="si"></span></th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="empty" id="empty" hidden>No data yet &mdash; the collector runs on a timer; check back shortly.</div>
+
+  <footer id="legend" hidden></footer>
+
+<script>
+const $ = id => document.getElementById(id);
+let tzVal = parseInt(localStorage.getItem("tally-tzoff") || "0", 10) || 0;
+let theme = localStorage.getItem("tally-theme") || "light";
+let sortKey = localStorage.getItem("tally-sortkey") || "total";
+let sortDir = localStorage.getItem("tally-sortdir") || "desc";
+let selMonth = "", lastData = null;
+let prevVals = {}, prevMonth = "";
+const strCols = { peer: 1, endpoint: 1, ip: 1 };
+
+function applyTheme() {
+  document.documentElement.dataset.theme = theme;
+  $("themebtn").innerHTML = theme === "dark" ? "&#9728;" : "&#9789;";
+}
+function renderTz() { $("tzin").value = (tzVal >= 0 ? "+" : "") + tzVal; }
+const fmt = n => {
+  let f = Number(n);
+  for (const u of ["B","KiB","MiB","GiB","TiB"]) { if (f < 1024) return f.toFixed(1)+" "+u; f /= 1024; }
+  return f.toFixed(1)+" PiB";
+};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const ipNum = ip => { const p = String(ip).split("."); return p.length === 4 ? (((+p[0])*256+(+p[1]))*256+(+p[2]))*256+(+p[3]) : 0; };
+const sortVal = {
+  peer: p => p.peer.toLowerCase(),
+  status: p => p.online ? 1 : 0,
+  session: p => p.session_down + p.session_up,
+  total: p => p.down_total + p.up_total,
+  ip: p => ipNum(p.ip),
+  endpoint: p => p.endpoint || "",
+  today: p => p.down_today + p.up_today,
+  month: p => p.down_month + p.up_month,
+};
+
+async function load() {
+  try {
+    const q = new URLSearchParams({ tz: String(tzVal), month: selMonth });
+    lastData = await (await fetch("api/usage?" + q, { cache: "no-store" })).json();
+    selMonth = lastData.month || "";
+    render();
+  } catch (e) { $("metaleft").textContent = "error: " + e; }
+}
+
+function render() {
+  const d = lastData; if (!d) return;
+  const peers = (d.peers || []).slice();
+  const f = sortVal[sortKey] || sortVal.total, dir = sortDir === "asc" ? 1 : -1;
+  peers.sort((a, b) => { const x = f(a), y = f(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+
+  const online = peers.filter(p => p.online).length;
+  const sessLabel = online > 0 ? "session" : "last session"; // "last" only when all offline
+  $("suf").textContent = d.backend || "(a)wg";
+  $("metaleft").textContent = `${peers.length} peer(s), ${online} online`;
+  $("metaright").textContent = `updated ${d.now}`;
+  $("msel").textContent = d.month;
+
+  const m = parseInt((d.month || "").slice(5, 7), 10);
+  $("mdn").disabled = !(m > 1);   // older — blocked in January
+  $("mup").disabled = !(m < 12);  // newer — blocked in December
+
+  const max = Math.max(1, ...peers.map(p => p.down_total + p.up_total));
+  const prev = prevVals, cur = {}, sameMonth = prevMonth === d.month;
+  const tb = $("rows"); tb.innerHTML = "";
+  for (const p of peers) {
+    const tot = p.down_total + p.up_total;
+    const sess = p.session_down + p.session_up;
+    const tday = p.down_today + p.up_today;
+    const mon = p.down_month + p.up_month;
+    const pk = p.pubkey || p.peer;
+    cur[pk] = { sess, tot, tday, mon };
+    const pv = prev[pk]; // flash only on a real change
+    const bSess = pv && pv.sess !== sess ? " bump" : "";
+    const bTot  = pv && pv.tot  !== tot  ? " bump" : "";
+    const bTday = pv && pv.tday !== tday ? " bump" : "";
+    const bMon  = pv && sameMonth && pv.mon !== mon ? " bump" : ""; // not on month switch
+    const status = p.online
+      ? `<span class="dot on"></span><span class="st-on">online</span>`
+      : `<span class="dot"></span>${esc(p.handshake || "never")}`;
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td><div class="peer">${esc(p.peer)}</div><div class="bar"><span style="width:${(tot/max*100).toFixed(1)}%"></span></div></td>
+       <td>${status}</td>
+       <td class="num${bSess}"><div class="stag">${sessLabel}</div>${fmt(p.session_down)} ↓ <span class="up">/ ${fmt(p.session_up)} ↑</span></td>
+       <td class="num total${bTot}">${fmt(p.down_total)} ↓ <span class="up">/ ${fmt(p.up_total)} ↑</span></td>
+       <td class="ip">${esc(p.ip || "—")}</td>
+       <td class="ep">${esc(p.endpoint || "—")}</td>
+       <td class="num${bTday}">${fmt(tday)}</td>
+       <td class="num${bMon}">${fmt(mon)}</td>`;
+    tb.appendChild(tr);
+  }
+  prevVals = cur; prevMonth = d.month;
+  $("tbl").hidden = peers.length === 0;
+  $("empty").hidden = peers.length !== 0;
+
+  document.querySelectorAll("th .si").forEach(s => s.textContent = "");
+  const ath = document.querySelector(`th[data-key="${sortKey}"] .si`);
+  if (ath) ath.textContent = sortDir === "asc" ? " ▲" : " ▼";
+
+  $("legend").innerHTML =
+    `<div class="legrow"><span><b>↓ down</b> = peer downloaded (server→peer)</span>` +
+      `<span>times in <b>${esc(d.tz)}</b>, auto-refresh 5m</span></div>` +
+    `<div><b>↑ up</b> = peer uploaded (peer→server)</div>` +
+    `<div><b>Session</b> = since the tunnel last (re)started</div>` +
+    `<div><b>●</b> online = handshake &lt; 3 min</div>`;
+  $("legend").hidden = false;
+}
+
+function setTz(v) { tzVal = Math.max(-12, Math.min(14, v)); localStorage.setItem("tally-tzoff", String(tzVal)); renderTz(); load(); }
+function sortBy(k) { if (k === sortKey) sortDir = sortDir === "asc" ? "desc" : "asc"; else { sortKey = k; sortDir = strCols[k] ? "asc" : "desc"; } localStorage.setItem("tally-sortkey", sortKey); localStorage.setItem("tally-sortdir", sortDir); render(); }
+function navMonth(step) {
+  const cur = (lastData && lastData.month) || "";
+  const y = parseInt(cur.slice(0, 4), 10), m = parseInt(cur.slice(5, 7), 10);
+  const nm = m + step;
+  if (nm < 1 || nm > 12) return; // stays within the current year
+  selMonth = y + "-" + String(nm).padStart(2, "0");
+  load();
+}
+
+$("themebtn").onclick = () => { theme = theme === "dark" ? "light" : "dark"; localStorage.setItem("tally-theme", theme); applyTheme(); };
+$("tzup").onclick = () => setTz(tzVal + 1);
+$("tzdn").onclick = () => setTz(tzVal - 1);
+$("tzin").onchange = () => { let n = parseInt(String($("tzin").value).replace(/[^\d-]/g, ""), 10); if (isNaN(n)) n = 0; setTz(n); };
+$("tzin").onkeydown = e => { if (e.key === "ArrowUp") { e.preventDefault(); setTz(tzVal + 1); } else if (e.key === "ArrowDown") { e.preventDefault(); setTz(tzVal - 1); } };
+$("mdn").onclick = e => { e.stopPropagation(); navMonth(-1); };
+$("mup").onclick = e => { e.stopPropagation(); navMonth(1); };
+document.querySelectorAll("th[data-key]").forEach(th => th.addEventListener("click", () => sortBy(th.dataset.key)));
+
+renderTz(); applyTheme(); load(); setInterval(load, 300000); // 5 min, matches the collector
+</script>
+</body>
+</html>
