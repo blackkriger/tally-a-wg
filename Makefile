@@ -1,6 +1,6 @@
 BINARY    := tallyawg
 LDFLAGS   := -s -w
-PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
+PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
 .PHONY: build linux dist vet clean
 
