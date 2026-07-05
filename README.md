@@ -51,7 +51,7 @@ make dist     # cross-build every platform into dist/ + SHA256SUMS
 sudo ./install.sh
 ```
 
-Installs the binary, a config at `/etc/tallyawg/tallyawg.env`, and a systemd service running `tallyawg serve`. Reading peer counters needs root. The web page binds to localhost — put it behind your own reverse proxy and access control.
+Installs the binary, a config at `/etc/tallyawg/tallyawg.env`, and a systemd service running `tallyawg serve`. Reading peer counters needs root. 
 
 ## License
 
