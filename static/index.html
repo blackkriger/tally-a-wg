@@ -214,7 +214,7 @@ function render() {
     `<div class="legrow"><span><b>↓ down</b> = peer downloaded (server→peer)</span>` +
       `<span>times in <b>${esc(d.tz)}</b>, auto-refresh 5m</span></div>` +
     `<div><b>↑ up</b> = peer uploaded (peer→server)</div>` +
-    `<div><b>Session</b> = since the tunnel last (re)started</div>` +
+    `<div><b>Session</b> = since the peer's current connection began</div>` +
     `<div><b>●</b> online = handshake &lt; 3 min</div>`;
   $("legend").hidden = false;
 }

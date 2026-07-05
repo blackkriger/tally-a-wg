@@ -32,13 +32,22 @@ type Peer struct {
 // Ledger is the whole persistent state. Year is the UTC year; a rollover wipes
 // the accumulators so each year starts from zero.
 type Ledger struct {
-	Year  int                 `json:"year"`
-	Peers map[string]*Peer    `json:"peers"` // keyed by peer public key
-	Last  map[string][2]int64 `json:"last"`  // pubkey -> last raw [rx, tx]
+	Year     int                 `json:"year"`
+	Peers    map[string]*Peer    `json:"peers"`       // keyed by peer public key
+	Last     map[string][2]int64 `json:"last"`        // pubkey -> last raw [rx, tx]
+	SessBase map[string][2]int64 `json:"sess_base"`   // pubkey -> raw [rx, tx] at session start
+	SessAt   map[string]int64    `json:"sess_at"`     // pubkey -> session start (unix)
+	PrevOn   map[string]bool     `json:"prev_online"` // pubkey -> online at previous snapshot
 }
 
 func newLedger() *Ledger {
-	return &Ledger{Peers: map[string]*Peer{}, Last: map[string][2]int64{}}
+	return &Ledger{
+		Peers:    map[string]*Peer{},
+		Last:     map[string][2]int64{},
+		SessBase: map[string][2]int64{},
+		SessAt:   map[string]int64{},
+		PrevOn:   map[string]bool{},
+	}
 }
 
 func loadLedger(path string) (*Ledger, error) {
@@ -58,6 +67,15 @@ func loadLedger(path string) (*Ledger, error) {
 	}
 	if l.Last == nil {
 		l.Last = map[string][2]int64{}
+	}
+	if l.SessBase == nil {
+		l.SessBase = map[string][2]int64{}
+	}
+	if l.SessAt == nil {
+		l.SessAt = map[string]int64{}
+	}
+	if l.PrevOn == nil {
+		l.PrevOn = map[string]bool{}
 	}
 	for _, p := range l.Peers {
 		if p.Hours == nil {
@@ -139,6 +157,24 @@ func (l *Ledger) addDelta(now time.Time, pub, ip string, rx, tx int64) {
 	addBucket(p.Hours, now.UTC().Format("2006-01-02T15"), drx, dtx)
 	addBucket(p.Months, now.UTC().Format("2006-01"), drx, dtx)
 	l.Last[pub] = [2]int64{rx, tx}
+}
+
+// onlineSecs is the handshake-age cutoff (seconds) for "online".
+const onlineSecs = 180
+
+// updateSession rebaselines a peer's session counters on each offline->online transition.
+func (l *Ledger) updateSession(now time.Time, pub string, rx, tx int64, online bool, prevRaw [2]int64, hadLast bool) {
+	base, hasBase := l.SessBase[pub]
+	restart := hasBase && (rx < base[0] || tx < base[1])
+	if !hasBase || restart || (online && !l.PrevOn[pub]) {
+		if hadLast && !restart {
+			l.SessBase[pub] = prevRaw
+		} else {
+			l.SessBase[pub] = [2]int64{rx, tx}
+		}
+		l.SessAt[pub] = now.Unix()
+	}
+	l.PrevOn[pub] = online
 }
 
 func addBucket(m map[string]*Bucket, key string, rx, tx int64) {

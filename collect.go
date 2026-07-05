@@ -143,7 +143,10 @@ func collectOnce(o *Options) error {
 	now := time.Now()
 	l.maybeYearReset(now)
 	for _, p := range peers {
+		prevRaw, hadLast := l.Last[p.pub]
 		l.addDelta(now, p.pub, p.ip, p.rx, p.tx)
+		online := p.handshake > 0 && now.Unix()-p.handshake < onlineSecs
+		l.updateSession(now, p.pub, p.rx, p.tx, online, prevRaw, hadLast)
 	}
 	l.prune(now)
 	return saveLedger(o.Data, l)

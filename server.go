@@ -82,11 +82,17 @@ func runServe(args []string) {
 			ap := apiPeer{Row: row, Handshake: "never"}
 			if d, ok := live[row.Pubkey]; ok {
 				ap.Endpoint = d.endpoint
-				ap.SessionDown = d.tx // server tx = peer download
-				ap.SessionUp = d.rx
+				// session = live counter since the current session's baseline
+				if base, ok := l.SessBase[row.Pubkey]; ok {
+					ap.SessionDown = maxZero(d.tx - base[1])
+					ap.SessionUp = maxZero(d.rx - base[0])
+				} else {
+					ap.SessionDown = d.tx
+					ap.SessionUp = d.rx
+				}
 				if d.handshake > 0 {
 					ago := now.Unix() - d.handshake
-					ap.Online = ago < 180
+					ap.Online = ago < onlineSecs
 					ap.Handshake = relAgo(ago)
 				}
 			}
@@ -108,4 +114,11 @@ func runServe(args []string) {
 
 	log.Printf("tallyawg serving on http://%s (interface=%s, data=%s)", o.Listen, o.Interface, o.Data)
 	log.Fatal(http.ListenAndServe(o.Listen, mux))
+}
+
+func maxZero(v int64) int64 {
+	if v < 0 {
+		return 0
+	}
+	return v
 }
