@@ -7,7 +7,7 @@ import (
 
 // Stamped at build time via -ldflags "-X main.GitCommit=... -X main.BuildTime=...".
 var (
-	Version   = "0.2.0"
+	Version   = "0.3.0"
 	GitCommit = "dev"
 	BuildTime = "unknown"
 )

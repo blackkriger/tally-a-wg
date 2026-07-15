@@ -45,6 +45,9 @@
   td.num { font-variant-numeric:tabular-nums; }
   td.total { color:var(--accent); font-weight:700; }
   tr:hover td { background:var(--hover); }
+  tr.grphdr td { padding:15px 14px 5px; border:0; border-bottom:1px solid var(--line); color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.4px; }
+  tr.grphdr:hover td { background:transparent; }
+  tr.grphdr .hl { color:var(--accent); }
   /* pin value/status columns so changing numbers never reflow the table */
   #tbl tr > :nth-child(2) { min-width:150px; }                          /* Status         */
   #tbl tr > :nth-child(3), #tbl tr > :nth-child(4) { min-width:220px; } /* Session, Total */
@@ -159,7 +162,11 @@ function render() {
   const d = lastData; if (!d) return;
   const peers = (d.peers || []).slice();
   const f = sortVal[sortKey] || sortVal.total, dir = sortDir === "asc" ? 1 : -1;
-  peers.sort((a, b) => { const x = f(a), y = f(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+  const rank = p => (p.kind === "awg" ? 0 : 1); // awg group first, then wg
+  peers.sort((a, b) => {
+    if (rank(a) !== rank(b)) return rank(a) - rank(b);
+    const x = f(a), y = f(b); return (x < y ? -1 : x > y ? 1 : 0) * dir;
+  });
 
   const online = peers.filter(p => p.online).length;
   const sessLabel = online > 0 ? "session" : "last session"; // "last" only when all offline
@@ -174,8 +181,18 @@ function render() {
 
   const max = Math.max(1, ...peers.map(p => p.down_total + p.up_total));
   const prev = prevVals, cur = {}, sameMonth = prevMonth === d.month;
-  const tb = $("rows"); tb.innerHTML = "";
+  const tb = $("rows"); tb.innerHTML = ""; let prevRank = null;
   for (const p of peers) {
+    const pr = p.kind === "awg" ? 0 : 1;
+    if (pr !== prevRank) {
+      const hdr = document.createElement("tr"); hdr.className = "grphdr";
+      const label = p.kind === "awg"
+        ? `<span class="hl">A</span>mnezia<span class="hl">WG</span>`
+        : `<span class="hl">W</span>ire<span class="hl">G</span>uard`;
+      hdr.innerHTML = `<td colspan="8">${label}</td>`;
+      tb.appendChild(hdr);
+    }
+    prevRank = pr;
     const tot = p.down_total + p.up_total;
     const sess = p.session_down + p.session_up;
     const tday = p.down_today + p.up_today;

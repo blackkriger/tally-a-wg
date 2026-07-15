@@ -8,19 +8,16 @@ import (
 	"time"
 )
 
-// keepHours bounds per-peer hourly detail (~70 days) so "today" can be
-// recomputed in any whole-hour timezone; month and total are kept separately.
+// keepHours keeps ~70 days of hourly detail so "today" can be recomputed in any timezone.
 const keepHours = 70 * 24
 
-// Bucket is a directional byte count. Rx = peer upload (server received),
-// Tx = peer download (server sent).
+// Rx = peer upload (server received), Tx = peer download (server sent).
 type Bucket struct {
 	Rx int64 `json:"rx"`
 	Tx int64 `json:"tx"`
 }
 
-// Peer is one peer's accumulated usage. Hours keyed by UTC "2006-01-02T15",
-// Months by UTC "2006-01".
+// Hours keyed by UTC "2006-01-02T15", Months by UTC "2006-01".
 type Peer struct {
 	IP     string             `json:"ip"`
 	Rx     int64              `json:"rx"`
@@ -29,8 +26,7 @@ type Peer struct {
 	Months map[string]*Bucket `json:"months"`
 }
 
-// Ledger is the whole persistent state. Year is the UTC year; a rollover wipes
-// the accumulators so each year starts from zero.
+// a UTC year rollover wipes the accumulators so each year starts from zero.
 type Ledger struct {
 	Year     int                 `json:"year"`
 	Peers    map[string]*Peer    `json:"peers"`       // keyed by peer public key
@@ -109,8 +105,7 @@ func saveLedger(path string, l *Ledger) error {
 	return os.Rename(tmp, path) // atomic replace
 }
 
-// maybeYearReset zeroes the accumulators on a UTC year rollover. Last (raw
-// counters) is kept so the delta math stays correct across the boundary.
+// Last (raw counters) is kept so the delta math stays correct across the year boundary.
 func (l *Ledger) maybeYearReset(now time.Time) {
 	y := now.UTC().Year()
 	if l.Year == 0 {
@@ -127,8 +122,7 @@ func (l *Ledger) maybeYearReset(now time.Time) {
 	}
 }
 
-// addDelta folds raw counters into the ledger, reset-safe: a counter below its
-// last value means a restart, so the current value is taken as the delta.
+// reset-safe: a counter below its last value means a restart, so the value itself is the delta.
 func (l *Ledger) addDelta(now time.Time, pub, ip string, rx, tx int64) {
 	var drx, dtx int64
 	if last, seen := l.Last[pub]; !seen {
@@ -159,7 +153,6 @@ func (l *Ledger) addDelta(now time.Time, pub, ip string, rx, tx int64) {
 	l.Last[pub] = [2]int64{rx, tx}
 }
 
-// onlineSecs is the handshake-age cutoff (seconds) for "online".
 const onlineSecs = 180
 
 // updateSession rebaselines a peer's session counters on each offline->online transition.
@@ -187,7 +180,6 @@ func addBucket(m map[string]*Bucket, key string, rx, tx int64) {
 	b.Tx += tx
 }
 
-// prune drops hourly buckets older than keepHours; monthly buckets are kept.
 func (l *Ledger) prune(now time.Time) {
 	cutoff := now.UTC().Add(-keepHours * time.Hour).Format("2006-01-02T15")
 	for _, p := range l.Peers {
@@ -199,7 +191,6 @@ func (l *Ledger) prune(now time.Time) {
 	}
 }
 
-// availableMonths returns the sorted months that hold any data.
 func (l *Ledger) availableMonths() []string {
 	set := map[string]struct{}{}
 	for _, p := range l.Peers {
@@ -217,7 +208,6 @@ func (l *Ledger) availableMonths() []string {
 	return out
 }
 
-// Row is a flattened per-peer view for the report and the web API.
 type Row struct {
 	Peer      string `json:"peer"`
 	IP        string `json:"ip"`
@@ -232,8 +222,7 @@ type Row struct {
 	UpWin     int64  `json:"up_window"`
 }
 
-// rows flattens the ledger: today/window from hourly buckets (today honours
-// loc's day boundary), month from selMonth, total is lifetime.
+// today honours loc's day boundary; month from selMonth; total is lifetime.
 func (l *Ledger) rows(now time.Time, loc *time.Location, windowStart time.Time, selMonth string, byPub, byIP map[string]string) []Row {
 	curDay := now.In(loc).Format("2006-01-02")
 	winKey := windowStart.UTC().Format("2006-01-02T15")

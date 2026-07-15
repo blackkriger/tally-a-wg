@@ -8,8 +8,6 @@ import (
 	_ "time/tzdata" // embed the zoneinfo db so LoadLocation works without system tzdata
 )
 
-// parseZone accepts "" (UTC), a whole-hour offset ("+3", "-5"), or a name
-// ("UTC", "MSK", "Europe/Berlin"); anything unrecognised falls back to UTC.
 func parseZone(s string) *time.Location {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -24,7 +22,6 @@ func parseZone(s string) *time.Location {
 	return loadLoc(s)
 }
 
-// loadLoc resolves a zone name; "MSK"/"Moscow" -> Europe/Moscow, else IANA, else UTC.
 func loadLoc(name string) *time.Location {
 	switch strings.ToUpper(strings.TrimSpace(name)) {
 	case "", "UTC", "GMT":

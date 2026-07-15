@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -9,7 +10,6 @@ import (
 	"time"
 )
 
-// wgBinary resolves the wg-tools command: an explicit one, else awg, else wg.
 func wgBinary(explicit string) (string, error) {
 	if explicit != "" {
 		return explicit, nil
@@ -22,7 +22,6 @@ func wgBinary(explicit string) (string, error) {
 	return "", fmt.Errorf("neither 'awg' nor 'wg' found in PATH (set -wg)")
 }
 
-// backendName reports the protocol for display: "awg" or "wg".
 func backendName(o *Options) string {
 	wg, err := wgBinary(o.WG)
 	if err != nil {
@@ -34,26 +33,74 @@ func backendName(o *Options) string {
 	return "wg"
 }
 
-// wgInterface resolves the interface: explicit, else the first one that is up.
-func wgInterface(wg, explicit string) (string, error) {
+func backendLabel(o *Options) string {
+	wg, err := wgBinary(o.WG)
+	if err != nil {
+		return "wg"
+	}
+	ifaces, err := wgInterfaces(wg, o.Interface)
+	if err != nil || len(ifaces) == 0 {
+		return backendName(o)
+	}
+	var hasWg, hasAwg bool
+	for _, i := range ifaces {
+		if ifaceKind(wg, i) == "awg" {
+			hasAwg = true
+		} else {
+			hasWg = true
+		}
+	}
+	switch {
+	case hasWg && hasAwg:
+		return "(a)wg"
+	case hasAwg:
+		return "awg"
+	default:
+		return "wg"
+	}
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func wgInterfaces(wg, explicit string) ([]string, error) {
 	if explicit != "" {
-		return explicit, nil
+		return splitList(explicit), nil
 	}
 	out, err := exec.Command(wg, "show", "interfaces").Output()
 	if err != nil {
-		return "", fmt.Errorf("%s show interfaces: %w", wg, err)
+		return nil, fmt.Errorf("%s show interfaces: %w", wg, err)
 	}
 	f := strings.Fields(string(out))
 	if len(f) == 0 {
-		return "", fmt.Errorf("no interface is up (set -i)")
+		return nil, fmt.Errorf("no interface is up (set -i)")
 	}
-	return f[0], nil
+	return f, nil
 }
 
-// dumpPeer is one peer from `wg show <iface> dump`; rx/tx reset when the
-// interface restarts.
+// ifaceKind classifies an interface: "awg" if it reports junk params (jc/jmin), else "wg".
+func ifaceKind(wg, iface string) string {
+	out, err := exec.Command(wg, "show", iface).Output()
+	if err != nil {
+		return "wg"
+	}
+	if strings.Contains(string(out), "jc:") || strings.Contains(string(out), "jmin:") {
+		return "awg"
+	}
+	return "wg"
+}
+
+// rx/tx reset when the interface restarts.
 type dumpPeer struct {
 	pub, ip, endpoint string
+	kind              string
 	handshake         int64
 	rx, tx            int64
 }
@@ -68,8 +115,7 @@ func cleanIP(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// readDump parses `wg show <iface> dump`. Line 0 is the interface; peer fields
-// (tab-separated): pubkey, psk, endpoint, allowed-ips, handshake, rx, tx, keepalive.
+// dump fields (tab-separated): pubkey, psk, endpoint, allowed-ips, handshake, rx, tx, keepalive; line 0 is the interface.
 func readDump(wg, iface string) ([]dumpPeer, error) {
 	out, err := exec.Command(wg, "show", iface, "dump").Output()
 	if err != nil {
@@ -100,39 +146,36 @@ func readDump(wg, iface string) ([]dumpPeer, error) {
 	return peers, nil
 }
 
-// liveDump returns the current dump keyed by pubkey, to overlay live status
-// (handshake / session bytes / endpoint) onto the persistent rows.
 func liveDump(o *Options) map[string]dumpPeer {
 	m := map[string]dumpPeer{}
 	wg, err := wgBinary(o.WG)
 	if err != nil {
 		return m
 	}
-	iface, err := wgInterface(wg, o.Interface)
+	ifaces, err := wgInterfaces(wg, o.Interface)
 	if err != nil {
 		return m
 	}
-	peers, err := readDump(wg, iface)
-	if err != nil {
-		return m
-	}
-	for _, p := range peers {
-		m[p.pub] = p
+	for _, iface := range ifaces {
+		peers, err := readDump(wg, iface)
+		if err != nil {
+			continue
+		}
+		kind := ifaceKind(wg, iface)
+		for _, p := range peers {
+			p.kind = kind
+			m[p.pub] = p
+		}
 	}
 	return m
 }
 
-// collectOnce takes one snapshot and folds it into the ledger on disk.
 func collectOnce(o *Options) error {
 	wg, err := wgBinary(o.WG)
 	if err != nil {
 		return err
 	}
-	iface, err := wgInterface(wg, o.Interface)
-	if err != nil {
-		return err
-	}
-	peers, err := readDump(wg, iface)
+	ifaces, err := wgInterfaces(wg, o.Interface)
 	if err != nil {
 		return err
 	}
@@ -142,11 +185,18 @@ func collectOnce(o *Options) error {
 	}
 	now := time.Now()
 	l.maybeYearReset(now)
-	for _, p := range peers {
-		prevRaw, hadLast := l.Last[p.pub]
-		l.addDelta(now, p.pub, p.ip, p.rx, p.tx)
-		online := p.handshake > 0 && now.Unix()-p.handshake < onlineSecs
-		l.updateSession(now, p.pub, p.rx, p.tx, online, prevRaw, hadLast)
+	for _, iface := range ifaces {
+		peers, err := readDump(wg, iface)
+		if err != nil {
+			log.Printf("skip interface %s: %v", iface, err)
+			continue
+		}
+		for _, p := range peers {
+			prevRaw, hadLast := l.Last[p.pub]
+			l.addDelta(now, p.pub, p.ip, p.rx, p.tx)
+			online := p.handshake > 0 && now.Unix()-p.handshake < onlineSecs
+			l.updateSession(now, p.pub, p.rx, p.tx, online, prevRaw, hadLast)
+		}
 	}
 	l.prune(now)
 	return saveLedger(o.Data, l)

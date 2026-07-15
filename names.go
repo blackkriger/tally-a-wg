@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// namesFromConfig maps each peer's PublicKey to the "# comment" above its [Peer] block.
 func namesFromConfig(path string) map[string]string {
 	m := map[string]string{}
 	f, err := os.Open(path)
@@ -65,11 +64,10 @@ func namesFromFile(path string) (byPub, byIP map[string]string) {
 	return
 }
 
-// resolveNames merges names from the config and the names file; the names file wins.
 func resolveNames(o *Options) (byPub, byIP map[string]string) {
 	byPub, byIP = map[string]string{}, map[string]string{}
-	if o.Config != "" {
-		for k, v := range namesFromConfig(o.Config) {
+	for _, cfg := range splitList(o.Config) {
+		for k, v := range namesFromConfig(cfg) {
 			byPub[k] = v
 		}
 	}

@@ -14,7 +14,6 @@ import (
 //go:embed static
 var staticEmbed embed.FS
 
-// apiPeer is one peer in /api/usage: the ledger Row plus live status from `wg show`.
 type apiPeer struct {
 	Row
 	Online      bool   `json:"online"`
@@ -22,6 +21,7 @@ type apiPeer struct {
 	SessionDown int64  `json:"session_down"`
 	SessionUp   int64  `json:"session_up"`
 	Endpoint    string `json:"endpoint"`
+	Kind        string `json:"kind"`
 }
 
 func runServe(args []string) {
@@ -82,6 +82,7 @@ func runServe(args []string) {
 			ap := apiPeer{Row: row, Handshake: "never"}
 			if d, ok := live[row.Pubkey]; ok {
 				ap.Endpoint = d.endpoint
+				ap.Kind = d.kind
 				// session = live counter since the current session's baseline
 				if base, ok := l.SessBase[row.Pubkey]; ok {
 					ap.SessionDown = maxZero(d.tx - base[1])
@@ -107,7 +108,7 @@ func runServe(args []string) {
 			"months":       l.availableMonths(),
 			"tz":           tnow.Format("MST"),
 			"window_hours": hours,
-			"backend":      backendName(o),
+			"backend":      backendLabel(o),
 			"peers":        peers,
 		})
 	})

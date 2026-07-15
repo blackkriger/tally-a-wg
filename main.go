@@ -1,7 +1,4 @@
-// Command tallyawg keeps persistent per-peer traffic accounting for WireGuard /
-// AmneziaWG. The counters `wg show` reports reset on each interface restart, so
-// tallyawg snapshots them on a timer, accumulates reset-aware deltas in a JSON
-// ledger, and serves a CLI report and a web page.
+// Command tallyawg keeps reset-safe per-peer traffic accounting for WireGuard/AmneziaWG.
 package main
 
 import (
@@ -51,9 +48,9 @@ Usage:
   tallyawg version   print version
 
 Common flags:
-  -i, -interface  interface name (default: auto-detect)
+  -i, -interface  interface(s), comma-separated (default: all up)
   -wg             wg-tools binary (default: auto - awg, then wg)
-  -config         server .conf to read friendly "# name" peer comments from
+  -config         server .conf(s), comma-separated, for "# name" comments
   -names          names file: "<pubkey-or-address> <name>" per line
   -data           ledger file (default: /var/lib/tallyawg/ledger.json)
   -tz             timezone for today/month (UTC, MSK, or an IANA name)
