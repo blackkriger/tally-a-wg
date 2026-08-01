@@ -36,7 +36,7 @@ func namesFromConfig(path string) map[string]string {
 	return m
 }
 
-// namesFromFile reads "<pubkey-or-address> <name>" lines; keys >20 chars are pubkeys, the rest addresses.
+// namesFromFile reads "<pubkey-or-address> <name>" lines; keys with a dot/colon are addresses, the rest pubkeys.
 func namesFromFile(path string) (byPub, byIP map[string]string) {
 	byPub, byIP = map[string]string{}, map[string]string{}
 	f, err := os.Open(path)
@@ -55,10 +55,10 @@ func namesFromFile(path string) (byPub, byIP map[string]string) {
 			continue
 		}
 		key, name := parts[0], strings.Join(parts[1:], " ")
-		if len(key) > 20 {
-			byPub[key] = name
-		} else {
+		if strings.ContainsAny(key, ".:") {
 			byIP[key] = name
+		} else {
+			byPub[key] = name
 		}
 	}
 	return
