@@ -36,20 +36,11 @@ tallyawg collect    # take one snapshot (e.g. from cron)
 
 Common flags: `-i <iface>`, `-config <server.conf>` (peer names), `-data <ledger.json>`; `serve` adds `-listen` and `-interval`. `down` = peer download (server → peer), `up` = peer upload.
 
-## Building
-
-Static assets are embedded via `go:embed`, so a plain Go build bundles the web page too — no Node.js toolchain. Requires Go 1.23+ 
-
-```sh
-make          # build ./tallyawg for the host
-make dist     # cross-build every platform into dist/ + SHA256SUMS
-```
-
 ## Install (Linux)
 
 Reading the wg/awg counters needs **root**. Both ways install tally(a)wg as a systemd service that survives reboots.
 
-**From a release** — the linux tarball is self-contained (binary + `install.sh` + systemd unit + config template), no clone or Go needed:
+**From a release** — the linux `.tar.gz` is self-contained (binary + `install.sh` + systemd unit + config template), no clone or Go needed:
 
 ```sh
 # grab tallyawg_linux_amd64.tar.gz (or _arm64) from the latest release, then:
@@ -75,13 +66,22 @@ sudo systemctl restart tallyawg
 sudo systemctl status tallyawg
 ```
 
-With no `-i`, every up wg/awg interface is auto-detected and read with the tool that supports it. Add `-config <server.conf>` for peer names and `-listen 0.0.0.0:8082` to reach the page from your VPN — it binds to localhost by default, so keep the port firewalled to your tunnel.
+With no `-i`, every up wg/awg interface is auto-detected and read with the tool that supports it. Add `-config <server.conf>` for peer names and `-listen 0.0.0.0:8082` to reach the page from your tunnel — it binds to localhost by default, so keep the port firewalled to the wg/awg interface.
 
 Prefer to run it by hand? The binary sits in the extracted `tallyawg/` folder:
 
 ```sh
 chmod +x tallyawg
 sudo ./tallyawg serve -config /etc/wireguard/wg0.conf -listen 0.0.0.0:8082
+```
+
+## Building
+
+Static assets are embedded via `go:embed`, so a plain Go build bundles the web page too — no Node.js toolchain. Requires Go 1.23+ 
+
+```sh
+make          # build ./tallyawg for the host
+make dist     # cross-build every platform into dist/ + SHA256SUMS
 ```
 
 
