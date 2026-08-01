@@ -47,11 +47,43 @@ make dist     # cross-build every platform into dist/ + SHA256SUMS
 
 ## Install (Linux)
 
+Reading the wg/awg counters needs **root**. Both ways install tally(a)wg as a systemd service that survives reboots.
+
+**From a release** — the linux tarball is self-contained (binary + `install.sh` + systemd unit + config template), no clone or Go needed:
+
 ```sh
+# grab tallyawg_linux_amd64.tar.gz (or _arm64) from the latest release, then:
+tar xzf tallyawg_linux_amd64.tar.gz
+cd tallyawg
 sudo ./install.sh
 ```
 
-Installs the binary, a config at `/etc/tallyawg/tallyawg.env`, and a systemd service running `tallyawg serve`. Reading peer counters needs root. 
+**From source** (needs Go 1.23+):
+
+```sh
+git clone https://github.com/blackkriger/tally-a-wg
+cd tally-a-wg
+make linux
+sudo ./install.sh
+```
+
+Either way, `install.sh` copies the binary to `/usr/local/bin/tallyawg`, writes `/etc/tallyawg/tallyawg.env`, and enables `tallyawg.service`. Set your flags in the env file and restart:
+
+```sh
+# edit TALLYAWG_FLAGS in /etc/tallyawg/tallyawg.env, then:
+sudo systemctl restart tallyawg
+sudo systemctl status tallyawg
+```
+
+With no `-i`, every up wg/awg interface is auto-detected and read with the tool that supports it. Add `-config <server.conf>` for peer names and `-listen 0.0.0.0:8082` to reach the page from your VPN — it binds to localhost by default, so keep the port firewalled to your tunnel.
+
+Prefer to run it by hand? The binary sits in the extracted `tallyawg/` folder:
+
+```sh
+chmod +x tallyawg
+sudo ./tallyawg serve -config /etc/wireguard/wg0.conf -listen 0.0.0.0:8082
+```
+
 
 ## License
 

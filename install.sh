@@ -7,7 +7,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # Pick a binary: prebuilt linux binary, prebuilt host binary, or build from source.
 BIN=""
 for c in "$HERE/tallyawg-linux-amd64" "$HERE/tallyawg"; do
-  [ -x "$c" ] && BIN="$c" && break
+  [ -f "$c" ] && BIN="$c" && break
 done
 if [ -z "$BIN" ]; then
   if command -v go >/dev/null 2>&1; then
