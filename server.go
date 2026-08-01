@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -20,6 +19,8 @@ type apiPeer struct {
 	Handshake   string `json:"handshake"`
 	SessionDown int64  `json:"session_down"`
 	SessionUp   int64  `json:"session_up"`
+	SessStart   int64  `json:"session_start"`
+	HandshakeAt int64  `json:"handshake_at"`
 	Endpoint    string `json:"endpoint"`
 	Kind        string `json:"kind"`
 }
@@ -40,11 +41,16 @@ func runServe(args []string) {
 			log.Printf("collect error: %v", err)
 		}
 	}
-	collect() // immediate first snapshot
+	trigger := make(chan struct{}, 1) // debounced kick for a new peer seen via the API
+	collect()                         // immediate first snapshot
 	go func() {
 		t := time.NewTicker(*interval)
 		defer t.Stop()
-		for range t.C {
+		for {
+			select {
+			case <-t.C:
+			case <-trigger:
+			}
 			collect()
 		}
 	}()
@@ -57,10 +63,6 @@ func runServe(args []string) {
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	mux.HandleFunc("/api/usage", func(w http.ResponseWriter, r *http.Request) {
 		loc := parseZone(r.URL.Query().Get("tz"))
-		hours, _ := strconv.Atoi(r.URL.Query().Get("hours"))
-		if hours <= 0 {
-			hours = 24
-		}
 		mu.Lock()
 		l, lerr := loadLedger(o.Data)
 		mu.Unlock()
@@ -74,8 +76,41 @@ func runServe(args []string) {
 		if selMonth == "" {
 			selMonth = now.UTC().Format("2006-01")
 		}
-		rows := l.rows(now, loc, now.Add(-time.Duration(hours)*time.Hour), selMonth, byPub, byIP)
-		live := liveDump(o)
+		rows := l.rows(now, loc, selMonth, byPub, byIP)
+		live, backend := liveState(o)
+
+		// also surface live peers not in the ledger yet (freshly created; they enter it on the next collect)
+		seen := make(map[string]bool, len(rows))
+		for _, r := range rows {
+			seen[r.Pubkey] = true
+		}
+		hasNew := false
+		for pub, d := range live {
+			if seen[pub] {
+				continue
+			}
+			hasNew = true
+			name := byPub[pub]
+			if name == "" {
+				name = byIP[d.ip]
+			}
+			if name == "" {
+				if d.ip != "" {
+					name = d.ip
+				} else if len(pub) >= 12 {
+					name = pub[:12]
+				} else {
+					name = pub
+				}
+			}
+			rows = append(rows, Row{Peer: name, IP: d.ip, Pubkey: pub})
+		}
+		if hasNew { // kick an off-cycle collect so the new peer lands in the ledger now
+			select {
+			case trigger <- struct{}{}:
+			default:
+			}
+		}
 
 		peers := make([]apiPeer, 0, len(rows))
 		for _, row := range rows {
@@ -83,6 +118,8 @@ func runServe(args []string) {
 			if d, ok := live[row.Pubkey]; ok {
 				ap.Endpoint = d.endpoint
 				ap.Kind = d.kind
+				ap.SessStart = l.SessAt[row.Pubkey]
+				ap.HandshakeAt = d.handshake
 				// session = live counter since the current session's baseline
 				if base, ok := l.SessBase[row.Pubkey]; ok {
 					ap.SessionDown = maxZero(d.tx - base[1])
@@ -103,13 +140,12 @@ func runServe(args []string) {
 		tnow := now.In(loc)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"now":          tnow.Format("2006-01-02 15:04 MST"),
-			"month":        selMonth,
-			"months":       l.availableMonths(),
-			"tz":           tnow.Format("MST"),
-			"window_hours": hours,
-			"backend":      backendLabel(o),
-			"peers":        peers,
+			"now":     tnow.Format("2006-01-02 15:04 MST"),
+			"month":   selMonth,
+			"months":  l.availableMonths(),
+			"tz":      tnow.Format("MST"),
+			"backend": backend,
+			"peers":   peers,
 		})
 	})
 

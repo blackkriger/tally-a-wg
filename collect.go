@@ -33,33 +33,6 @@ func backendName(o *Options) string {
 	return "wg"
 }
 
-func backendLabel(o *Options) string {
-	wg, err := wgBinary(o.WG)
-	if err != nil {
-		return "wg"
-	}
-	ifaces, err := wgInterfaces(wg, o.Interface)
-	if err != nil || len(ifaces) == 0 {
-		return backendName(o)
-	}
-	var hasWg, hasAwg bool
-	for _, i := range ifaces {
-		if ifaceKind(wg, i) == "awg" {
-			hasAwg = true
-		} else {
-			hasWg = true
-		}
-	}
-	switch {
-	case hasWg && hasAwg:
-		return "(a)wg"
-	case hasAwg:
-		return "awg"
-	default:
-		return "wg"
-	}
-}
-
 func splitList(s string) []string {
 	var out []string
 	for _, p := range strings.Split(s, ",") {
@@ -70,19 +43,55 @@ func splitList(s string) []string {
 	return out
 }
 
-func wgInterfaces(wg, explicit string) ([]string, error) {
-	if explicit != "" {
-		return splitList(explicit), nil
+// wgInterfaces returns the explicit -i list, else the union of what awg and wg report as up (they each only list their own interfaces).
+func wgInterfaces(o *Options) ([]string, error) {
+	if o.Interface != "" {
+		return splitList(o.Interface), nil
 	}
-	out, err := exec.Command(wg, "show", "interfaces").Output()
-	if err != nil {
-		return nil, fmt.Errorf("%s show interfaces: %w", wg, err)
+	bins := []string{o.WG}
+	if o.WG == "" {
+		bins = []string{"awg", "wg"}
 	}
-	f := strings.Fields(string(out))
-	if len(f) == 0 {
+	seen := map[string]bool{}
+	var out []string
+	for _, b := range bins {
+		if b == "" {
+			continue
+		}
+		res, err := exec.Command(b, "show", "interfaces").Output()
+		if err != nil {
+			continue
+		}
+		for _, f := range strings.Fields(string(res)) {
+			if !seen[f] {
+				seen[f] = true
+				out = append(out, f)
+			}
+		}
+	}
+	if len(out) == 0 {
 		return nil, fmt.Errorf("no interface is up (set -i)")
 	}
-	return f, nil
+	return out, nil
+}
+
+// ifaceDump reads one interface with the wg-tools binary that can handle it: the explicit -wg if set, otherwise awg then wg (awg can't read a plain wg iface).
+func ifaceDump(o *Options, iface string) ([]dumpPeer, string, bool) {
+	bins := []string{o.WG}
+	if o.WG == "" {
+		bins = []string{"awg", "wg"}
+	}
+	for _, b := range bins {
+		if b == "" {
+			continue
+		}
+		peers, err := readDump(b, iface)
+		if err != nil {
+			continue
+		}
+		return peers, ifaceKind(b, iface), true
+	}
+	return nil, "", false
 }
 
 // ifaceKind classifies an interface: "awg" if it reports junk params (jc/jmin), else "wg".
@@ -146,58 +155,71 @@ func readDump(wg, iface string) ([]dumpPeer, error) {
 	return peers, nil
 }
 
-func liveDump(o *Options) map[string]dumpPeer {
+// liveState returns the current per-peer dump plus the backend label in one pass over the interfaces (one dump + one kind probe each).
+func liveState(o *Options) (map[string]dumpPeer, string) {
 	m := map[string]dumpPeer{}
-	wg, err := wgBinary(o.WG)
+	ifaces, err := wgInterfaces(o)
 	if err != nil {
-		return m
+		return m, backendName(o)
 	}
-	ifaces, err := wgInterfaces(wg, o.Interface)
-	if err != nil {
-		return m
-	}
+	var hasWg, hasAwg bool
 	for _, iface := range ifaces {
-		peers, err := readDump(wg, iface)
-		if err != nil {
+		peers, kind, ok := ifaceDump(o, iface)
+		if !ok {
 			continue
 		}
-		kind := ifaceKind(wg, iface)
+		if kind == "awg" {
+			hasAwg = true
+		} else {
+			hasWg = true
+		}
 		for _, p := range peers {
 			p.kind = kind
 			m[p.pub] = p
 		}
 	}
-	return m
+	switch {
+	case hasWg && hasAwg:
+		return m, "(a)wg"
+	case hasAwg:
+		return m, "awg"
+	default:
+		return m, "wg"
+	}
 }
 
 func collectOnce(o *Options) error {
-	wg, err := wgBinary(o.WG)
+	ifaces, err := wgInterfaces(o)
 	if err != nil {
 		return err
 	}
-	ifaces, err := wgInterfaces(wg, o.Interface)
-	if err != nil {
-		return err
-	}
-	l, err := loadLedger(o.Data)
-	if err != nil {
-		return err
-	}
-	now := time.Now()
-	l.maybeYearReset(now)
-	for _, iface := range ifaces {
-		peers, err := readDump(wg, iface)
+	return withLock(o.Data, func() error {
+		l, err := loadLedger(o.Data)
 		if err != nil {
-			log.Printf("skip interface %s: %v", iface, err)
-			continue
+			return err
 		}
-		for _, p := range peers {
-			prevRaw, hadLast := l.Last[p.pub]
-			l.addDelta(now, p.pub, p.ip, p.rx, p.tx)
-			online := p.handshake > 0 && now.Unix()-p.handshake < onlineSecs
-			l.updateSession(now, p.pub, p.rx, p.tx, online, prevRaw, hadLast)
+		now := time.Now()
+		l.maybeYearReset(now)
+		seen := map[string]bool{}
+		for _, iface := range ifaces {
+			peers, _, ok := ifaceDump(o, iface)
+			if !ok {
+				log.Printf("skip interface %s: no wg-tools binary could read it", iface)
+				continue
+			}
+			for _, p := range peers {
+				if seen[p.pub] {
+					log.Printf("skip duplicate peer %s on %s", p.pub, iface)
+					continue
+				}
+				seen[p.pub] = true
+				prevRaw, hadLast := l.Last[p.pub]
+				l.addDelta(now, p.pub, p.ip, p.rx, p.tx)
+				online := p.handshake > 0 && now.Unix()-p.handshake < onlineSecs
+				l.updateSession(now, p.pub, p.rx, p.tx, online, p.handshake, prevRaw, hadLast)
+			}
 		}
-	}
-	l.prune(now)
-	return saveLedger(o.Data, l)
+		l.prune(now)
+		return saveLedger(o.Data, l)
+	})
 }

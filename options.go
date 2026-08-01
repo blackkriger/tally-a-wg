@@ -8,6 +8,7 @@ type Options struct {
 	Config    string
 	Names     string
 	Data      string
+	TZ        string
 	Listen    string // serve only
 }
 
@@ -21,6 +22,7 @@ func newFlags(name string, o *Options) *flag.FlagSet {
 	fs.StringVar(&o.Config, "config", "", `server .conf(s), comma-separated, for "# name" peer comments`)
 	fs.StringVar(&o.Names, "names", "", `names file: "<pubkey-or-address> <name>" per line`)
 	fs.StringVar(&o.Data, "data", defaultData, "ledger file")
+	fs.StringVar(&o.TZ, "tz", "UTC", "timezone for today/month (UTC, an offset like +3, or an IANA name)")
 	return fs
 }
 

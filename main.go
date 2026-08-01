@@ -76,8 +76,6 @@ func runReport(args []string) {
 	o := &Options{}
 	fs := newFlags("report", o)
 	jsonOut := fs.Bool("json", false, "output JSON instead of a table")
-	tz := fs.String("tz", "UTC", "timezone for today/month (UTC, an offset like +3, or an IANA name)")
-	hours := fs.Int("hours", 24, "window size in hours for the recent-usage column")
 	_ = fs.Parse(args)
 	o.applyDefaults()
 	l, err := loadLedger(o.Data)
@@ -86,13 +84,10 @@ func runReport(args []string) {
 		os.Exit(1)
 	}
 	byPub, byIP := resolveNames(o)
-	loc := parseZone(*tz)
+	loc := parseZone(o.TZ)
 	now := time.Now()
-	if *hours <= 0 {
-		*hours = 24
-	}
 	selMonth := now.UTC().Format("2006-01")
-	rows := l.rows(now, loc, now.Add(-time.Duration(*hours)*time.Hour), selMonth, byPub, byIP)
+	rows := l.rows(now, loc, selMonth, byPub, byIP)
 	if *jsonOut {
 		_ = json.NewEncoder(os.Stdout).Encode(rows)
 		return

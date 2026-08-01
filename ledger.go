@@ -156,7 +156,7 @@ func (l *Ledger) addDelta(now time.Time, pub, ip string, rx, tx int64) {
 const onlineSecs = 180
 
 // updateSession rebaselines a peer's session counters on each offline->online transition.
-func (l *Ledger) updateSession(now time.Time, pub string, rx, tx int64, online bool, prevRaw [2]int64, hadLast bool) {
+func (l *Ledger) updateSession(now time.Time, pub string, rx, tx int64, online bool, hs int64, prevRaw [2]int64, hadLast bool) {
 	base, hasBase := l.SessBase[pub]
 	restart := hasBase && (rx < base[0] || tx < base[1])
 	if !hasBase || restart || (online && !l.PrevOn[pub]) {
@@ -165,7 +165,9 @@ func (l *Ledger) updateSession(now time.Time, pub string, rx, tx int64, online b
 		} else {
 			l.SessBase[pub] = [2]int64{rx, tx}
 		}
-		l.SessAt[pub] = now.Unix()
+		if online { // stamp a start only for a real session — the handshake that opened it
+			l.SessAt[pub] = hs
+		}
 	}
 	l.PrevOn[pub] = online
 }
@@ -218,14 +220,11 @@ type Row struct {
 	UpMonth   int64  `json:"up_month"`
 	DownToday int64  `json:"down_today"`
 	UpToday   int64  `json:"up_today"`
-	DownWin   int64  `json:"down_window"`
-	UpWin     int64  `json:"up_window"`
 }
 
 // today honours loc's day boundary; month from selMonth; total is lifetime.
-func (l *Ledger) rows(now time.Time, loc *time.Location, windowStart time.Time, selMonth string, byPub, byIP map[string]string) []Row {
+func (l *Ledger) rows(now time.Time, loc *time.Location, selMonth string, byPub, byIP map[string]string) []Row {
 	curDay := now.In(loc).Format("2006-01-02")
-	winKey := windowStart.UTC().Format("2006-01-02T15")
 	rows := make([]Row, 0, len(l.Peers))
 	for pub, p := range l.Peers {
 		name := byPub[pub]
@@ -241,7 +240,7 @@ func (l *Ledger) rows(now time.Time, loc *time.Location, windowStart time.Time, 
 				name = pub
 			}
 		}
-		var dRx, dTx, wRx, wTx int64
+		var dRx, dTx int64
 		for hk, b := range p.Hours {
 			ht, err := time.ParseInLocation("2006-01-02T15", hk, time.UTC)
 			if err != nil {
@@ -250,10 +249,6 @@ func (l *Ledger) rows(now time.Time, loc *time.Location, windowStart time.Time, 
 			if ht.In(loc).Format("2006-01-02") == curDay {
 				dRx += b.Rx
 				dTx += b.Tx
-			}
-			if hk >= winKey {
-				wRx += b.Rx
-				wTx += b.Tx
 			}
 		}
 		var mRx, mTx int64
@@ -266,7 +261,6 @@ func (l *Ledger) rows(now time.Time, loc *time.Location, windowStart time.Time, 
 			DownTotal: p.Tx, UpTotal: p.Rx,
 			DownMonth: mTx, UpMonth: mRx,
 			DownToday: dTx, UpToday: dRx,
-			DownWin: wTx, UpWin: wRx,
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool {
