@@ -25,6 +25,10 @@ func main() {
 		runCollect(args)
 	case "report":
 		runReport(args)
+	case "install":
+		runInstall(args)
+	case "uninstall":
+		runUninstall(args)
 	case "version":
 		printVersion()
 	case "help", "-h", "--help":
@@ -45,6 +49,8 @@ Usage:
   tallyawg serve     run the collector loop + web page
   tallyawg collect   take one snapshot into the ledger
   tallyawg report    print per-peer totals (default)
+  tallyawg install   install as a systemd service (Linux, root)
+  tallyawg uninstall remove the service and the installed binary
   tallyawg version   print version
 
 Common flags:

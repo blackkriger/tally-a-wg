@@ -40,13 +40,12 @@ Common flags: `-i <iface>`, `-config <server.conf>` (peer names), `-data <ledger
 
 Reading the wg/awg counters needs **root**. Both ways install tally(a)wg as a systemd service that survives reboots.
 
-**From a release** — the linux `.tar.gz` is self-contained (binary + `install.sh` + systemd unit + config template), no clone or Go needed:
+**From a release** — one file, no clone or Go needed. The binary installs itself: it carries the systemd unit and the config template inside.
 
 ```sh
 # grab tallyawg_linux_amd64.tar.gz (or _arm64) from the latest release, then:
 tar xzf tallyawg_linux_amd64.tar.gz
-cd tallyawg
-sudo ./install.sh
+sudo ./tallyawg install
 ```
 
 **From source** (needs Go 1.23+):
@@ -55,10 +54,10 @@ sudo ./install.sh
 git clone https://github.com/blackkriger/tally-a-wg
 cd tally-a-wg
 make linux
-sudo ./install.sh
+sudo ./tallyawg-linux-amd64 install
 ```
 
-Either way, `install.sh` copies the binary to `/usr/local/bin/tallyawg`, writes `/etc/tallyawg/tallyawg.env`, and enables `tallyawg.service`. Set your flags in the env file and restart:
+Either way, `install` copies the binary to `/usr/local/bin/tallyawg`, writes `/etc/tallyawg/tallyawg.env` (keeping yours if it already exists), enables `tallyawg.service` and restarts it — so running it again is also how you upgrade. `sudo tallyawg uninstall` removes the service and the binary, keeping the ledger and your config. Set your flags in the env file and restart:
 
 ```sh
 # edit TALLYAWG_FLAGS in /etc/tallyawg/tallyawg.env, then:
@@ -68,10 +67,9 @@ sudo systemctl status tallyawg
 
 With no `-i`, every up wg/awg interface is auto-detected and read with the tool that supports it. Add `-config <server.conf>` for peer names and `-listen 0.0.0.0:8082` to reach the page from your tunnel — it binds to localhost by default, so keep the port firewalled to the wg/awg interface.
 
-Prefer to run it by hand? The binary sits in the extracted `tallyawg/` folder:
+Prefer to run it by hand, without a service? Just run the binary:
 
 ```sh
-chmod +x tallyawg
 sudo ./tallyawg serve -config /etc/wireguard/wg0.conf -listen 0.0.0.0:8082
 ```
 
