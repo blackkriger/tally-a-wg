@@ -64,8 +64,8 @@
   /* pin value/status columns so changing numbers never reflow the table */
   #tbl tr > :nth-child(3) { min-width:150px; }                          /* Status         */
   #tbl tr > :nth-child(4), #tbl tr > :nth-child(5) { min-width:220px; } /* Session, Total */
-  #tbl tr > :nth-child(8) { min-width:120px; }                          /* Today          */
-  #tbl tr > :nth-child(9) { min-width:162px; }                          /* Month          */
+  #tbl tr > :nth-child(8) { min-width:162px; }                          /* Month          */
+  #tbl tr > :nth-child(9) { min-width:120px; }                          /* Today          */
   /* flash a cell when its value changes */
   @keyframes bump { 0% { background:color-mix(in srgb, var(--accent) 26%, transparent); } 100% { background:transparent; } }
   td.bump { animation:bump 1.1s ease-out; }
@@ -77,6 +77,7 @@
   .ip,.muted,.up { color:var(--muted); }
   .ep { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
   .stag { font-size:10px; text-transform:uppercase; letter-spacing:.3px; color:var(--muted); margin-bottom:2px; }
+  .stag:empty { display:none; }
   .bar { height:5px; border-radius:3px; background:var(--bar-bg); margin-top:5px; overflow:hidden; min-width:90px; }
   .bar>span { display:block; height:100%; background:var(--accent); }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; background:var(--muted); }
@@ -124,10 +125,10 @@
         <th data-key="total">Total<span class="si"></span></th>
         <th data-key="ip">Address<span class="si"></span></th>
         <th data-key="endpoint">Endpoint<span class="si"></span></th>
-        <th data-key="today">Today<span class="si"></span></th>
         <th data-key="month">
           <span class="mnav"><button id="mdn" type="button" title="older">&#9660;</button><button id="mup" type="button" title="newer">&#9650;</button></span>
           Month <span id="msel"></span><span class="si"></span></th>
+        <th data-key="today">Today<span class="si"></span></th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
@@ -167,11 +168,10 @@ function clock(unix) {
   return MON[d.getUTCMonth()] + " " + d.getUTCDate() + " " + hm;
 }
 function sessTag(p) {
-  const label = p.online ? "session" : "last session";
-  if (!p.session_start || !p.handshake_at) return label;
-  if (p.online) return `${label} · since ${clock(p.session_start)}`;
-  if (p.handshake_at > p.session_start) return `${label} · ${clock(p.session_start)} → ${clock(p.handshake_at)}`;
-  return `${label} · ${clock(p.session_start)}`;
+  if (!p.session_start || !p.handshake_at) return "";
+  if (p.online) return `since ${clock(p.session_start)}`;
+  if (p.handshake_at > p.session_start) return `${clock(p.session_start)} → ${clock(p.handshake_at)}`;
+  return clock(p.session_start);
 }
 const ipNum = ip => { const p = String(ip).split("."); return p.length === 4 ? (((+p[0])*256+(+p[1]))*256+(+p[2]))*256+(+p[3]) : 0; };
 const sortVal = {
@@ -208,8 +208,8 @@ function segHtml(v, list, clickable) {
     <span class="seg-meta">${list.length} peers &middot; ${onEl}</span>
     <span class="seg-stats">
       <span><span class="k">total</span><b>${fmt(a.t)}</b></span>
-      <span><span class="k">today</span><b>${fmt(a.td)}</b></span>
       <span><span class="k">month</span><b>${fmt(a.mo)}</b></span>
+      <span><span class="k">today</span><b>${fmt(a.td)}</b></span>
     </span></div>`;
 }
 
@@ -284,8 +284,8 @@ function renderView() {
        <td class="num total${bTot}">${fmt(p.down_total)} ↓ <span class="up">/ ${fmt(p.up_total)} ↑</span></td>
        <td class="ip">${esc(p.ip || "—")}</td>
        <td class="ep">${esc(p.endpoint || "—")}</td>
-       <td class="num${bTday}">${fmt(tday)}</td>
-       <td class="num${bMon}">${fmt(mon)}</td>`;
+       <td class="num${bMon}">${fmt(mon)}</td>
+       <td class="num${bTday}">${fmt(tday)}</td>`;
     tb.appendChild(tr);
   }
   prevVals = cur; prevMonth = d.month;
