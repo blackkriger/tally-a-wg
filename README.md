@@ -40,7 +40,7 @@ Common flags: `-i <iface>`, `-config <server.conf>` (peer names), `-data <ledger
 
 Reading the wg/awg counters needs **root**. Both ways install tally(a)wg as a systemd service that survives reboots.
 
-**From a release** — one file, no clone or Go needed. The binary installs itself: it carries the systemd unit and the config template inside.
+**From a release** — no clone or Go needed. The binary installs itself: it carries the systemd unit and the config template inside. 
 
 ```sh
 # grab tallyawg_linux_amd64.tar.gz (or _arm64) from the latest release, then:
