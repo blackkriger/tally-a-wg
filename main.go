@@ -49,7 +49,7 @@ Usage:
   tallyawg serve     run the collector loop + web page
   tallyawg collect   take one snapshot into the ledger
   tallyawg report    print per-peer totals (default)
-  tallyawg install   install as a systemd service (Linux, root)
+  tallyawg install   install as a service (Linux systemd / macOS launchd, root)
   tallyawg uninstall remove the service and the installed binary
   tallyawg version   print version
 

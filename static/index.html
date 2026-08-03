@@ -160,18 +160,22 @@ const fmt = n => {
 };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-function clock(unix) {
-  const off = tzVal * 3600;
-  const d = new Date((unix + off) * 1000), n = new Date((Date.now() / 1000 + off) * 1000);
-  const hm = String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0");
-  if (d.getUTCFullYear() === n.getUTCFullYear() && d.getUTCMonth() === n.getUTCMonth() && d.getUTCDate() === n.getUTCDate()) return hm;
-  return MON[d.getUTCMonth()] + " " + d.getUTCDate() + " " + hm;
+const shifted = unix => new Date((unix + tzVal * 3600) * 1000);
+const hhmm = d => String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0");
+const sameDay = (a, b) => a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth() && a.getUTCDate() === b.getUTCDate();
+// day label: "today" for the current day, else the peer's month and day
+function day(d) {
+  return sameDay(d, shifted(Date.now() / 1000)) ? "today" : MON[d.getUTCMonth()] + " " + d.getUTCDate();
 }
 function sessTag(p) {
   if (!p.session_start || !p.handshake_at) return "";
-  if (p.online) return `since ${clock(p.session_start)}`;
-  if (p.handshake_at > p.session_start) return `${clock(p.session_start)} → ${clock(p.handshake_at)}`;
-  return clock(p.session_start);
+  const a = shifted(p.session_start);
+  if (p.online) return `since ${day(a)} ${hhmm(a)}`;
+  if (p.handshake_at <= p.session_start) return `${day(a)} ${hhmm(a)}`;
+  const b = shifted(p.handshake_at);
+  return sameDay(a, b)
+    ? `${day(a)} ${hhmm(a)} → ${hhmm(b)}`
+    : `${day(a)} ${hhmm(a)} → ${day(b)} ${hhmm(b)}`;
 }
 const ipNum = ip => { const p = String(ip).split("."); return p.length === 4 ? (((+p[0])*256+(+p[1]))*256+(+p[2]))*256+(+p[3]) : 0; };
 const sortVal = {

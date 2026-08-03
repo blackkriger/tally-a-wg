@@ -36,11 +36,11 @@ tallyawg collect    # take one snapshot (e.g. from cron)
 
 Common flags: `-i <iface>`, `-config <server.conf>` (peer names), `-data <ledger.json>`; `serve` adds `-listen` and `-interval`. `down` = peer download (server → peer), `up` = peer upload.
 
-## Install (Linux)
+## Install
 
-Reading the wg/awg counters needs **root**. Both ways install tally(a)wg as a systemd service that survives reboots.
+Reading the wg/awg counters needs **root**. Both ways install tally(a)wg as a service that survives reboots — systemd on Linux, launchd on macOS.
 
-**From a release** — no clone or Go needed. The binary installs itself: it carries the systemd unit and the config template inside. 
+**From a release** — no clone or Go needed. The binary installs itself: it carries the service definition and the config template inside. 
 
 ```sh
 # grab tallyawg_linux_amd64.tar.gz (or _arm64) from the latest release, then:
@@ -53,16 +53,27 @@ sudo ./tallyawg install
 ```sh
 git clone https://github.com/blackkriger/tally-a-wg
 cd tally-a-wg
-make linux
-sudo ./tallyawg-linux-amd64 install
+make                 # or: make linux, for a static linux/amd64 binary
+sudo ./tallyawg install
 ```
 
-Either way, `install` copies the binary to `/usr/local/bin/tallyawg`, writes `/etc/tallyawg/tallyawg.env` (keeping yours if it already exists), enables `tallyawg.service` and restarts it — so running it again is also how you upgrade. `sudo tallyawg uninstall` removes the service and the binary, keeping the ledger and your config. Set your flags in the env file and restart:
+On macOS the `wg` / `awg` command-line tools have to be there too — `brew install wireguard-tools` covers `wg`.
+
+Either way, `install` copies the binary to `/usr/local/bin/tallyawg`, sets up the service and (re)starts it — so running it again is also how you upgrade. `sudo tallyawg uninstall` removes the service and the binary, keeping the ledger and your config.
+
+On **Linux** flags live in `/etc/tallyawg/tallyawg.env` (written on first install, yours is kept afterwards):
 
 ```sh
 # edit TALLYAWG_FLAGS in /etc/tallyawg/tallyawg.env, then:
 sudo systemctl restart tallyawg
 sudo systemctl status tallyawg
+```
+
+On **macOS** they live in the launchd job, one `<string>` per word after `serve`:
+
+```sh
+# edit ProgramArguments in /Library/LaunchDaemons/com.github.blackkriger.tallyawg.plist, then:
+sudo tallyawg install       # reloads the job
 ```
 
 With no `-i`, every up wg/awg interface is auto-detected and read with the tool that supports it. Add `-config <server.conf>` for peer names and `-listen 0.0.0.0:8082` to reach the page from your tunnel — it binds to localhost by default, so keep the port firewalled to the wg/awg interface.
