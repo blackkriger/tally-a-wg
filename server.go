@@ -22,7 +22,6 @@ type apiPeer struct {
 	SessStart   int64  `json:"session_start"`
 	HandshakeAt int64  `json:"handshake_at"`
 	Endpoint    string `json:"endpoint"`
-	Kind        string `json:"kind"`
 }
 
 func runServe(args []string) {
@@ -62,7 +61,11 @@ func runServe(args []string) {
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 	mux.HandleFunc("/api/usage", func(w http.ResponseWriter, r *http.Request) {
-		loc := parseZone(r.URL.Query().Get("tz"))
+		tz := r.URL.Query().Get("tz")
+		if tz == "" {
+			tz = o.TZ // the -tz flag is the default for clients that don't ask for one
+		}
+		loc := parseZone(tz)
 		mu.Lock()
 		l, lerr := loadLedger(o.Data)
 		mu.Unlock()
@@ -74,7 +77,7 @@ func runServe(args []string) {
 		now := time.Now()
 		selMonth := r.URL.Query().Get("month")
 		if selMonth == "" {
-			selMonth = now.UTC().Format("2006-01")
+			selMonth = now.In(loc).Format("2006-01") // the month the viewer is in, matching how today is counted
 		}
 		rows := l.rows(now, loc, selMonth, byPub, byIP)
 		live, backend := liveState(o)
@@ -150,7 +153,15 @@ func runServe(args []string) {
 	})
 
 	log.Printf("tallyawg serving on http://%s (interface=%s, data=%s)", o.Listen, o.Interface, o.Data)
-	log.Fatal(http.ListenAndServe(o.Listen, mux))
+	srv := &http.Server{
+		Addr:              o.Listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
 
 func maxZero(v int64) int64 {

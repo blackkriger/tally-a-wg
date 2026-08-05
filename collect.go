@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os/exec"
@@ -9,6 +10,15 @@ import (
 	"strings"
 	"time"
 )
+
+// wgTimeout bounds every wg/awg call: a wedged one would otherwise hold the collector lock forever.
+const wgTimeout = 10 * time.Second
+
+func wgOutput(name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), wgTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output()
+}
 
 func wgBinary(explicit string) (string, error) {
 	if explicit != "" {
@@ -58,7 +68,7 @@ func wgInterfaces(o *Options) ([]string, error) {
 		if b == "" {
 			continue
 		}
-		res, err := exec.Command(b, "show", "interfaces").Output()
+		res, err := wgOutput(b, "show", "interfaces")
 		if err != nil {
 			continue
 		}
@@ -96,7 +106,7 @@ func ifaceDump(o *Options, iface string) ([]dumpPeer, string, bool) {
 
 // ifaceKind classifies an interface: "awg" if it reports junk params (jc/jmin), else "wg".
 func ifaceKind(wg, iface string) string {
-	out, err := exec.Command(wg, "show", iface).Output()
+	out, err := wgOutput(wg, "show", iface)
 	if err != nil {
 		return "wg"
 	}
@@ -121,12 +131,16 @@ func cleanIP(s string) string {
 	if c := strings.IndexByte(s, ','); c >= 0 {
 		s = s[:c]
 	}
-	return strings.TrimSpace(s)
+	s = strings.TrimSpace(s)
+	if s == "(none)" { // wg prints this for an empty AllowedIPs; it must not become the peer's name
+		return ""
+	}
+	return s
 }
 
 // dump fields (tab-separated): pubkey, psk, endpoint, allowed-ips, handshake, rx, tx, keepalive; line 0 is the interface.
 func readDump(wg, iface string) ([]dumpPeer, error) {
-	out, err := exec.Command(wg, "show", iface, "dump").Output()
+	out, err := wgOutput(wg, "show", iface, "dump")
 	if err != nil {
 		return nil, fmt.Errorf("%s show %s dump: %w", wg, iface, err)
 	}
@@ -199,10 +213,9 @@ func collectOnce(o *Options) error {
 			return err
 		}
 		now := time.Now()
-		l.maybeYearReset(now)
 		seen := map[string]bool{}
 		for _, iface := range ifaces {
-			peers, _, ok := ifaceDump(o, iface)
+			peers, kind, ok := ifaceDump(o, iface)
 			if !ok {
 				log.Printf("skip interface %s: no wg-tools binary could read it", iface)
 				continue
@@ -215,6 +228,7 @@ func collectOnce(o *Options) error {
 				seen[p.pub] = true
 				prevRaw, hadLast := l.Last[p.pub]
 				l.addDelta(now, p.pub, p.ip, p.rx, p.tx)
+				l.Peers[p.pub].Kind = kind
 				online := p.handshake > 0 && now.Unix()-p.handshake < onlineSecs
 				l.updateSession(now, p.pub, p.rx, p.tx, online, p.handshake, prevRaw, hadLast)
 			}

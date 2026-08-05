@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -18,17 +19,19 @@ func human(n int64) string {
 
 func printTable(now time.Time, loc *time.Location, selMonth string, rows []Row) {
 	tnow := now.In(loc)
+	year, _, _ := strings.Cut(selMonth, "-")
 	fmt.Printf("per-peer traffic ledger (persistent, %s) - down=peer download, up=peer upload\n\n", tnow.Format("MST"))
-	fmt.Printf("%-16s%-12s%-13s%-12s%-16s%-11s\n", "PEER", "ADDRESS", "TOTAL down", "TOTAL up", "MONTH "+selMonth, "TODAY")
-	fmt.Println("------------------------------------------------------------------------------------------")
+	fmt.Printf("%-16s%-12s%-13s%-12s%-13s%-16s%-11s\n", "PEER", "ADDRESS", "TOTAL down", "TOTAL up", "YEAR "+year, "MONTH "+selMonth, "TODAY")
+	fmt.Println("-------------------------------------------------------------------------------------------------------")
 	if len(rows) == 0 {
 		fmt.Println("(no data yet - the collector runs on a timer; check back after the first run)")
 		return
 	}
 	for _, r := range rows {
-		fmt.Printf("%-16s%-12s%-13s%-12s%-16s%-11s\n",
+		fmt.Printf("%-16s%-12s%-13s%-12s%-13s%-16s%-11s\n",
 			r.Peer, r.IP,
 			human(r.DownTotal), human(r.UpTotal),
+			human(r.DownYear+r.UpYear),
 			human(r.DownMonth+r.UpMonth), human(r.DownToday+r.UpToday))
 	}
 }

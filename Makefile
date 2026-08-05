@@ -2,7 +2,7 @@ BINARY    := tallyawg
 LDFLAGS   := -s -w
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
 
-.PHONY: build linux dist vet clean
+.PHONY: build linux dist test vet clean
 
 build:
 	go build -o $(BINARY) .
@@ -20,6 +20,9 @@ dist:
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -ldflags "$(LDFLAGS)" -o dist/$(BINARY)_$${os}_$${arch}$$ext . ; \
 	done
 	@cd dist && sha256sum $(BINARY)_* > SHA256SUMS && echo "  -> dist/SHA256SUMS"
+
+test:
+	go test ./...
 
 vet:
 	go vet ./...

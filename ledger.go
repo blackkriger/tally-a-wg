@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -20,15 +21,14 @@ type Bucket struct {
 // Hours keyed by UTC "2006-01-02T15", Months by UTC "2006-01".
 type Peer struct {
 	IP     string             `json:"ip"`
+	Kind   string             `json:"kind"` // awg or wg, remembered so peers missing from a live dump keep their protocol
 	Rx     int64              `json:"rx"`
 	Tx     int64              `json:"tx"`
 	Hours  map[string]*Bucket `json:"hours"`
 	Months map[string]*Bucket `json:"months"`
 }
 
-// a UTC year rollover wipes the accumulators so each year starts from zero.
 type Ledger struct {
-	Year     int                 `json:"year"`
 	Peers    map[string]*Peer    `json:"peers"`       // keyed by peer public key
 	Last     map[string][2]int64 `json:"last"`        // pubkey -> last raw [rx, tx]
 	SessBase map[string][2]int64 `json:"sess_base"`   // pubkey -> raw [rx, tx] at session start
@@ -83,6 +83,9 @@ func loadLedger(path string) (*Ledger, error) {
 		// backfill months from hours on first upgrade
 		if len(p.Months) == 0 && len(p.Hours) > 0 {
 			for hk, b := range p.Hours {
+				if len(hk) < 7 { // a truncated key would otherwise panic the collector into a restart loop
+					continue
+				}
 				addBucket(p.Months, hk[:7], b.Rx, b.Tx) // "2006-01"
 			}
 		}
@@ -99,32 +102,31 @@ func saveLedger(path string, l *Ledger) error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil { // flush before the rename so a power cut can't leave an empty ledger
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, path) // atomic replace
 }
 
-// Last (raw counters) is kept so the delta math stays correct across the year boundary.
-func (l *Ledger) maybeYearReset(now time.Time) {
-	y := now.UTC().Year()
-	if l.Year == 0 {
-		l.Year = y
-		return
-	}
-	if y > l.Year {
-		for _, p := range l.Peers {
-			p.Rx, p.Tx = 0, 0
-			p.Hours = map[string]*Bucket{}
-			p.Months = map[string]*Bucket{}
-		}
-		l.Year = y
-	}
-}
-
 // reset-safe: a counter below its last value means a restart, so the value itself is the delta.
 func (l *Ledger) addDelta(now time.Time, pub, ip string, rx, tx int64) {
 	var drx, dtx int64
+	_, seenBefore := l.Last[pub]
 	if last, seen := l.Last[pub]; !seen {
 		drx, dtx = rx, tx // first sight
 	} else {
@@ -148,8 +150,12 @@ func (l *Ledger) addDelta(now time.Time, pub, ip string, rx, tx int64) {
 	p.IP = ip
 	p.Rx += drx
 	p.Tx += dtx
-	addBucket(p.Hours, now.UTC().Format("2006-01-02T15"), drx, dtx)
-	addBucket(p.Months, now.UTC().Format("2006-01"), drx, dtx)
+	// a peer's first reading is however much it transferred before tally saw it, so it counts
+	// towards the lifetime total but must not land in today's or this month's bucket
+	if seenBefore {
+		addBucket(p.Hours, now.UTC().Format("2006-01-02T15"), drx, dtx)
+		addBucket(p.Months, now.UTC().Format("2006-01"), drx, dtx)
+	}
 	l.Last[pub] = [2]int64{rx, tx}
 }
 
@@ -160,9 +166,12 @@ func (l *Ledger) updateSession(now time.Time, pub string, rx, tx int64, online b
 	base, hasBase := l.SessBase[pub]
 	restart := hasBase && (rx < base[0] || tx < base[1])
 	if !hasBase || restart || (online && !l.PrevOn[pub]) {
-		if hadLast && !restart {
+		switch {
+		case restart: // the interface counters restarted from zero, so all of them belong to this session
+			l.SessBase[pub] = [2]int64{0, 0}
+		case hadLast:
 			l.SessBase[pub] = prevRaw
-		} else {
+		default:
 			l.SessBase[pub] = [2]int64{rx, tx}
 		}
 		if online { // stamp a start only for a real session — the handshake that opened it
@@ -216,15 +225,22 @@ type Row struct {
 	Pubkey    string `json:"pubkey"`
 	DownTotal int64  `json:"down_total"`
 	UpTotal   int64  `json:"up_total"`
+	DownYear  int64  `json:"down_year"`
+	UpYear    int64  `json:"up_year"`
 	DownMonth int64  `json:"down_month"`
 	UpMonth   int64  `json:"up_month"`
 	DownToday int64  `json:"down_today"`
 	UpToday   int64  `json:"up_today"`
+	Kind      string `json:"kind"`
 }
 
-// today honours loc's day boundary; month from selMonth; total is lifetime.
+// today honours loc's day boundary; month from selMonth; year from the months sharing its year; total is lifetime.
 func (l *Ledger) rows(now time.Time, loc *time.Location, selMonth string, byPub, byIP map[string]string) []Row {
-	curDay := now.In(loc).Format("2006-01-02")
+	// hour keys are UTC and sort chronologically, so today is a plain string range instead of a parse per bucket
+	local := now.In(loc)
+	dayStart := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	firstHour := dayStart.UTC().Format("2006-01-02T15")
+	lastHour := dayStart.Add(24*time.Hour - time.Nanosecond).UTC().Format("2006-01-02T15")
 	rows := make([]Row, 0, len(l.Peers))
 	for pub, p := range l.Peers {
 		name := byPub[pub]
@@ -242,11 +258,7 @@ func (l *Ledger) rows(now time.Time, loc *time.Location, selMonth string, byPub,
 		}
 		var dRx, dTx int64
 		for hk, b := range p.Hours {
-			ht, err := time.ParseInLocation("2006-01-02T15", hk, time.UTC)
-			if err != nil {
-				continue
-			}
-			if ht.In(loc).Format("2006-01-02") == curDay {
+			if hk >= firstHour && hk <= lastHour {
 				dRx += b.Rx
 				dTx += b.Tx
 			}
@@ -255,10 +267,20 @@ func (l *Ledger) rows(now time.Time, loc *time.Location, selMonth string, byPub,
 		if b := p.Months[selMonth]; b != nil {
 			mRx, mTx = b.Rx, b.Tx
 		}
+		var yRx, yTx int64
+		if year, _, ok := strings.Cut(selMonth, "-"); ok {
+			for mk, b := range p.Months {
+				if strings.HasPrefix(mk, year+"-") {
+					yRx += b.Rx
+					yTx += b.Tx
+				}
+			}
+		}
 		// down = peer download = server Tx; up = peer upload = server Rx.
 		rows = append(rows, Row{
-			Peer: name, IP: p.IP, Pubkey: pub,
+			Peer: name, IP: p.IP, Pubkey: pub, Kind: p.Kind,
 			DownTotal: p.Tx, UpTotal: p.Rx,
+			DownYear: yTx, UpYear: yRx,
 			DownMonth: mTx, UpMonth: mRx,
 			DownToday: dTx, UpToday: dRx,
 		})

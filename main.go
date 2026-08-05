@@ -92,7 +92,7 @@ func runReport(args []string) {
 	byPub, byIP := resolveNames(o)
 	loc := parseZone(o.TZ)
 	now := time.Now()
-	selMonth := now.UTC().Format("2006-01")
+	selMonth := now.In(loc).Format("2006-01")
 	rows := l.rows(now, loc, selMonth, byPub, byIP)
 	if *jsonOut {
 		_ = json.NewEncoder(os.Stdout).Encode(rows)

@@ -1,15 +1,15 @@
 # tally(a)wg
 
-`wg show` only counts bytes **since the interface last came up**, so the per-peer counters reset on every restart and reboot. **tally(a)wg** snapshots them on a timer, accumulates **reset-aware deltas** in a small JSON ledger, and shows per-peer **total / month / today** usage that survives restarts — in the terminal or the browser.
+`wg show` only counts bytes **since the interface last came up**, so the per-peer counters reset on every restart and reboot. **tally(a)wg** snapshots them on a timer, accumulates **reset-aware deltas** in a small JSON ledger, and shows per-peer **total / year / month / today** usage that survives restarts — in the terminal or the browser.
 
 The `(a)` is optional: `tallywg` for WireGuard, `tallyawg` for AmneziaWG.
 
 In the terminal (`tallyawg report`):
 
 ```
-PEER            ADDRESS     TOTAL down   TOTAL up    MONTH 2026-06   TODAY
-laptop          10.8.1.3    12.4 GiB     2.1 GiB     9.8 GiB         420.5 MiB
-phone           10.8.1.2    830.0 MiB    44.0 MiB    512.0 MiB       12.0 MiB
+PEER            ADDRESS     TOTAL down   TOTAL up    YEAR 2026    MONTH 2026-06   TODAY
+laptop          10.8.1.3    12.4 GiB     2.1 GiB     11.9 GiB     9.8 GiB         420.5 MiB
+phone           10.8.1.2    830.0 MiB    44.0 MiB    780.0 MiB    512.0 MiB       12.0 MiB
 ```
 
 The web page (`tallyawg serve`) shows totals plus live status — online / last handshake, current session, and endpoint:
@@ -18,7 +18,7 @@ The web page (`tallyawg serve`) shows totals plus live status — online / last 
 
 ## Features
 
-- Per-peer **total / month / today**, persistent across restarts and reboots.
+- Per-peer **total / year / month / today**, persistent across restarts and reboots. 
 - **Reset-aware** — detects counter resets and keeps accumulating correctly.
 - **Live view** — who's online, last handshake, current session, and endpoint.
 - **Web page** with a light/dark theme, timezone offset, sortable columns, and month-by-month history; your preferences are remembered.
@@ -29,7 +29,7 @@ The web page (`tallyawg serve`) shows totals plus live status — online / last 
 ## Usage
 
 ```sh
-tallyawg            # report: per-peer total / month / today
+tallyawg            # report: per-peer total / year / month / today
 tallyawg serve      # collector loop + web page (default 127.0.0.1:8082)
 tallyawg collect    # take one snapshot (e.g. from cron)
 ```
@@ -76,13 +76,33 @@ On **macOS** they live in the launchd job, one `<string>` per word after `serve`
 sudo tallyawg install       # reloads the job
 ```
 
-With no `-i`, every up wg/awg interface is auto-detected and read with the tool that supports it. Add `-config <server.conf>` for peer names and `-listen 0.0.0.0:8082` to reach the page from your tunnel — it binds to localhost by default, so keep the port firewalled to the wg/awg interface.
+With no `-i`, every up wg/awg interface is auto-detected and read with the tool that supports it. Add `-config <server.conf>` to show friendly peer names.
 
 Prefer to run it by hand, without a service? Just run the binary:
 
 ```sh
-sudo ./tallyawg serve -config /etc/wireguard/wg0.conf -listen 0.0.0.0:8082
+sudo ./tallyawg serve -config /etc/wireguard/wg0.conf
 ```
+
+### Exposing the page
+
+The page has **no authentication** and shows public keys, addresses, transfer volumes and peer endpoints — the current public IP of every client. That is why it binds to `127.0.0.1:8082` by default.
+
+To reach it from your own devices, keep that default and forward the port over SSH:
+
+```sh
+ssh -L 8082:127.0.0.1:8082 root@your-server    # then open http://127.0.0.1:8082
+```
+
+If you would rather serve it to everyone already on the tunnel, bind wide **and** firewall the port to the wg/awg interfaces — binding alone puts it on the public internet:
+
+```sh
+sudo ufw allow in on wg0 to any port 8082 proto tcp
+sudo ufw allow in on awg0 to any port 8082 proto tcp
+sudo tallyawg serve -listen 0.0.0.0:8082
+```
+
+Putting it behind a reverse proxy with authentication works too.
 
 ## Building
 

@@ -14,7 +14,7 @@ func parseZone(s string) *time.Location {
 		return time.UTC
 	}
 	if n, err := strconv.Atoi(strings.TrimPrefix(s, "+")); err == nil {
-		if n == 0 {
+		if n == 0 || n < -12 || n > 14 { // whole hours only, so "+0300" and the like fall back instead of shifting by days
 			return time.UTC
 		}
 		return time.FixedZone(fmt.Sprintf("UTC%+d", n), n*3600)
