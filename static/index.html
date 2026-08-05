@@ -21,6 +21,7 @@
   header { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
   .logo { font-size:24px; font-weight:700; letter-spacing:.3px; }
   .logo .suf { color:var(--accent); }
+  .logo .ver { color:var(--muted); font-size:12px; font-weight:500; letter-spacing:0; margin-left:8px; vertical-align:middle; }
   .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .field { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
   .step { display:inline-flex; align-items:stretch; border:1px solid var(--ctrl-bd); border-radius:7px;
@@ -97,7 +98,7 @@
 </head>
 <body>
   <header>
-    <div class="logo">tally<span class="suf" id="suf">(a)wg</span></div>
+    <div class="logo">tally<span class="suf" id="suf">(a)wg</span><span class="ver" id="ver"></span></div>
     <div class="controls">
       <span class="field">UTC
         <span class="step">
@@ -265,6 +266,7 @@ function renderView() {
 
   const online = peers.filter(p => p.online).length;
   $("suf").textContent = d.backend || "(a)wg";
+  $("ver").textContent = d.version ? "v" + d.version : "";
   $("metaleft").textContent = `${peers.length} peer(s), ${online} online`;
   $("metaright").textContent = `updated ${d.now}`;
   $("msel").textContent = d.month;

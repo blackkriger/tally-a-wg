@@ -148,6 +148,7 @@ func runServe(args []string) {
 			"months":  l.availableMonths(),
 			"tz":      tnow.Format("MST"),
 			"backend": backend,
+			"version": Version,
 			"peers":   peers,
 		})
 	})
