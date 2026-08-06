@@ -12,3 +12,5 @@ func platformInstall() error {
 }
 
 func platformUninstall() error { return platformInstall() }
+
+func restartService() error { return platformInstall() }

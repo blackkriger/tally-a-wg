@@ -153,6 +153,40 @@ func runServe(args []string) {
 		})
 	})
 
+	mux.HandleFunc("/api/update", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		enc := json.NewEncoder(w)
+
+		if r.Method == http.MethodGet { // just report what is out there
+			tag, err := latestTag()
+			if err != nil {
+				_ = enc.Encode(map[string]any{"version": Version, "error": err.Error()})
+				return
+			}
+			_ = enc.Encode(map[string]any{"version": Version, "latest": tag, "available": newerThanRunning(tag)})
+			return
+		}
+		// POST does the swap; a GET must never be able to trigger it
+		if r.Method != http.MethodPost {
+			http.Error(w, "use GET to check or POST to update", http.StatusMethodNotAllowed)
+			return
+		}
+		tag, err := selfUpdate()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = enc.Encode(map[string]any{"error": err.Error()})
+			return
+		}
+		_ = enc.Encode(map[string]any{"installed": tag})
+		// the restart replaces this process, so let the response flush first
+		go func() {
+			time.Sleep(time.Second)
+			if err := restartService(); err != nil {
+				log.Printf("update installed but the restart failed: %v", err)
+			}
+		}()
+	})
+
 	log.Printf("tallyawg serving on http://%s (interface=%s, data=%s)", o.Listen, o.Interface, o.Data)
 	srv := &http.Server{
 		Addr:              o.Listen,

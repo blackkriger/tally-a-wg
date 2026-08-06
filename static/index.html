@@ -22,6 +22,11 @@
   .logo { font-size:24px; font-weight:700; letter-spacing:.3px; }
   .logo .suf { color:var(--accent); }
   .logo .ver { color:var(--muted); font-size:12px; font-weight:500; letter-spacing:0; margin-left:8px; vertical-align:middle; }
+  .upd { margin-left:8px; font-size:12px; font-weight:500; letter-spacing:0; vertical-align:middle; color:var(--accent); }
+  .upd button { border:1px solid var(--accent); background:transparent; color:var(--accent); font:inherit;
+                cursor:pointer; border-radius:6px; padding:2px 9px; margin-right:6px; }
+  .upd button:hover:not(:disabled) { background:var(--accent); color:#fff; }
+  .upd button:disabled { opacity:.6; cursor:default; }
   .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .field { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
   .step { display:inline-flex; align-items:stretch; border:1px solid var(--ctrl-bd); border-radius:7px;
@@ -98,7 +103,7 @@
 </head>
 <body>
   <header>
-    <div class="logo">tally<span class="suf" id="suf">(a)wg</span><span class="ver" id="ver"></span></div>
+    <div class="logo">tally<span class="suf" id="suf">(a)wg</span><span class="ver" id="ver"></span><span class="upd" id="upd" hidden></span></div>
     <div class="controls">
       <span class="field">UTC
         <span class="step">
@@ -357,7 +362,35 @@ $("mup").onclick = e => { e.stopPropagation(); navMonth(1); };
 $("summary").addEventListener("click", e => { const s = e.target.closest(".seg[data-view]"); if (!s) return; const v = s.dataset.view; view = view === v ? "all" : v; localStorage.setItem("tally-view", view); renderView(); });
 document.querySelectorAll("th[data-key]").forEach(th => th.addEventListener("click", () => sortBy(th.dataset.key)));
 
+// update banner: checked once per page load; the server caches the GitHub lookup for an hour
+async function checkUpdate() {
+  try {
+    const d = await (await fetch("api/update", { cache: "no-store" })).json();
+    if (!d.available) return;
+    const el = $("upd");
+    el.innerHTML = `<button type="button" id="updbtn">Update</button> ${esc(d.latest)} available`;
+    el.hidden = false;
+    $("updbtn").onclick = applyUpdate;
+  } catch (e) { /* offline or GitHub is unreachable — the banner just stays hidden */ }
+}
+
+async function applyUpdate() {
+  const btn = $("updbtn");
+  btn.disabled = true;
+  btn.textContent = "Updating…";
+  try {
+    const res = await fetch("api/update", { method: "POST" });
+    const d = await res.json();
+    if (!res.ok) throw new Error(d.error || res.status);
+    $("upd").textContent = `installed ${d.installed}, restarting…`;
+    setTimeout(() => location.reload(), 6000); // give the service time to come back up
+  } catch (e) {
+    $("upd").textContent = "update failed: " + e.message;
+  }
+}
+
 renderTz(); applyTheme(); load(); setInterval(load, 300000); // 5 min, matches the collector
+checkUpdate();
 </script>
 </body>
 </html>

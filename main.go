@@ -29,6 +29,8 @@ func main() {
 		runInstall(args)
 	case "uninstall":
 		runUninstall(args)
+	case "update":
+		runUpdate(args)
 	case "version":
 		printVersion()
 	case "help", "-h", "--help":
@@ -51,6 +53,7 @@ Usage:
   tallyawg report    print per-peer totals (default)
   tallyawg install   install as a service (Linux systemd / macOS launchd, root)
   tallyawg uninstall remove the service and the installed binary
+  tallyawg update    install the newest release and restart the service
   tallyawg version   print version
 
 Common flags:

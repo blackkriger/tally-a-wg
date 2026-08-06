@@ -40,6 +40,10 @@ func platformInstall() error {
 	return nil
 }
 
+func restartService() error {
+	return run("launchctl", "kickstart", "-k", "system/"+launchLabel)
+}
+
 func platformUninstall() error {
 	_ = run("launchctl", "bootout", "system/"+launchLabel)
 	if err := os.Remove(installPlist); err == nil {

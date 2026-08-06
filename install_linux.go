@@ -54,6 +54,10 @@ func platformInstall() error {
 	return nil
 }
 
+func restartService() error {
+	return run("systemctl", "restart", "tallyawg.service")
+}
+
 func platformUninstall() error {
 	_ = run("systemctl", "disable", "--now", "tallyawg.service")
 	if err := os.Remove(installUnit); err == nil {
