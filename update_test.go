@@ -202,3 +202,29 @@ func TestAssetForRequiresThisPlatform(t *testing.T) {
 		t.Fatal("a release with no build for this platform must be refused")
 	}
 }
+
+// build.sh leaves the version out of the asset names, so the matcher must find them without it.
+func TestAssetForVersionlessNames(t *testing.T) {
+	mine := "tallyawg_" + runtime.GOOS + "_" + runtime.GOARCH + ".tar.gz"
+	r := &release{Tag: "v0.7.0"}
+	add := func(name, url string) {
+		r.Assets = append(r.Assets, struct {
+			Name string `json:"name"`
+			URL  string `json:"browser_download_url"`
+		}{name, url})
+	}
+	add("tallyawg_openbsd_riscv64.tar.gz", "http://x/wrong")
+	add(mine, "http://x/right")
+	add("SHA256SUMS", "http://x/sums")
+
+	archive, sums, name, err := assetFor(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if archive != "http://x/right" || name != mine {
+		t.Fatalf("picked %s (%s)", name, archive)
+	}
+	if sums != "http://x/sums" {
+		t.Fatalf("sums url = %s", sums)
+	}
+}

@@ -46,8 +46,8 @@ Reading the wg/awg counters needs **root**. Both ways install tally(a)wg as a se
 
 ```sh
 # grab the linux archive for your arch from the latest release, then:
-tar xzf tallyawg_*_linux_amd64.tar.gz
-sudo ./tallyawg_*_linux_amd64 install
+tar xzf tallyawg_linux_amd64.tar.gz
+sudo ./tallyawg_linux_amd64 install
 ```
 
 **From source** (needs Go 1.23+):
