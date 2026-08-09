@@ -21,10 +21,10 @@ The web page (`tallyawg serve`) shows totals plus live status — online / last 
 - Per-peer **total / year / month / today**, persistent across restarts and reboots. 
 - **Reset-aware** — detects counter resets and keeps accumulating correctly.
 - **Live view** — who's online, last handshake, current session, and endpoint.
-- **Web page** with a light/dark theme, timezone offset, sortable columns, and month-by-month history; your preferences are remembered.
+- **Web page** with a light/dark theme, timezone offset, sortable columns, and month-by-month history. 
 - Friendly peer names from `# name` comments in the server config, or a names file.
 - A CLI report **and** a built-in web page — pick either or both.
-- **Peer management** — add and remove peers from the page or the CLI: keys, an unused address and the client config with its QR are produced for you. Who may change things is decided by the tunnel address they come from. 
+- **Peer management** — add and remove peers from the page or the CLI: keys, an unused address and the client config with its QR are produced. Who may change things is decided by the tunnel address they come from. 
 - **Self-updating** — the page offers new releases and installs them after checking their checksum.
 - Single static binary, stdlib only. Works with both `wg` and `awg`.
 
@@ -63,15 +63,7 @@ On macOS the `wg` / `awg` command-line tools have to be there too — `brew inst
 
 Either way, `install` copies the binary to `/usr/local/bin/tallyawg`, sets up the service and (re)starts it. `sudo tallyawg uninstall` removes the service and the binary, keeping the ledger and your config.
 
-### Updating
-
-The page checks for new releases and offers an **Update** button next to the version; pressing it swaps the binary and restarts the service. The same thing from the shell:
-
-```sh
-sudo tallyawg update
-```
-
-Downloads come from this repository's releases over HTTPS and are only installed after their SHA-256 matches the `SHA256SUMS` published with the release; anything older than what is running is refused.
+### Setting flags
 
 On **Linux** flags live in `/etc/tallyawg/tallyawg.env` (written on first install, yours is kept afterwards):
 
@@ -95,6 +87,16 @@ Prefer to run it by hand, without a service? Just run the binary:
 ```sh
 sudo ./tallyawg serve -config /etc/wireguard/wg0.conf
 ```
+
+### Updating
+
+The page checks for new releases and offers an **Update** button next to the version; pressing it swaps the binary and restarts the service. The same thing from the shell:
+
+```sh
+sudo tallyawg update
+```
+
+Downloads come from this repository's releases over HTTPS and are only installed after their SHA-256 matches the `SHA256SUMS` published with the release; anything older than what is running is refused.
 
 ## Managing peers
 
@@ -126,7 +128,7 @@ Viewing stays open to everyone who can reach the page; only the actions are gate
 
 **This is only as good as the firewall.** The address proves something because the page is reachable through the tunnel alone. Bind it wide without the `ufw` rules below and any host that can route to `10.9.0.2` may claim to be it, so keep both together. `X-Forwarded-For` is ignored on purpose, which also means the check cannot work behind a reverse proxy — put the proxy's own authentication in front if you need one.
 
-### Exposing the page
+### Webpage
 
 Anyone who can open the page can **read** it, and it shows public keys, addresses, transfer volumes and peer endpoints — the current public IP of every client. Only changing things is gated, by address. That is why it binds to `127.0.0.1:8082` by default.
 
