@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
@@ -15,9 +16,26 @@ import (
 const wgTimeout = 10 * time.Second
 
 func wgOutput(name string, args ...string) ([]byte, error) {
+	return wgInput("", name, args...)
+}
+
+// wgInput runs a bounded wg/awg invocation, optionally feeding it stdin.
+func wgInput(stdin, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), wgTimeout)
 	defer cancel()
-	return exec.CommandContext(ctx, name, args...).Output()
+	cmd := exec.CommandContext(ctx, name, args...)
+	if stdin != "" {
+		cmd.Stdin = strings.NewReader(stdin)
+	}
+	out, err := cmd.Output()
+	// without this the caller only ever sees "exit status 1", never what the tool complained about
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if msg := strings.TrimSpace(string(ee.Stderr)); msg != "" {
+			return out, fmt.Errorf("%w: %s", err, msg)
+		}
+	}
+	return out, err
 }
 
 func wgBinary(explicit string) (string, error) {
@@ -119,6 +137,7 @@ func ifaceKind(wg, iface string) string {
 // rx/tx reset when the interface restarts.
 type dumpPeer struct {
 	pub, ip, endpoint string
+	iface             string
 	kind              string
 	handshake         int64
 	rx, tx            int64
@@ -188,7 +207,11 @@ func liveState(o *Options) (map[string]dumpPeer, string) {
 			hasWg = true
 		}
 		for _, p := range peers {
+			if _, dup := m[p.pub]; dup { // first interface wins, matching how collectOnce accounts it
+				continue
+			}
 			p.kind = kind
+			p.iface = iface
 			m[p.pub] = p
 		}
 	}
@@ -213,6 +236,7 @@ func collectOnce(o *Options) error {
 			return err
 		}
 		now := time.Now()
+		loc := parseZone(o.TZ)
 		seen := map[string]bool{}
 		for _, iface := range ifaces {
 			peers, kind, ok := ifaceDump(o, iface)
@@ -226,9 +250,15 @@ func collectOnce(o *Options) error {
 					continue
 				}
 				seen[p.pub] = true
+				// the other interface's counters for this key are not comparable to these
+				if q := l.Peers[p.pub]; q != nil && q.Iface != "" && q.Iface != iface {
+					log.Printf("peer %s moved from %s to %s: restarting its baseline", p.pub, q.Iface, iface)
+					delete(l.Last, p.pub)
+				}
 				prevRaw, hadLast := l.Last[p.pub]
-				l.addDelta(now, p.pub, p.ip, p.rx, p.tx)
+				l.addDelta(now, loc, p.pub, p.ip, p.rx, p.tx)
 				l.Peers[p.pub].Kind = kind
+				l.Peers[p.pub].Iface = iface
 				online := p.handshake > 0 && now.Unix()-p.handshake < onlineSecs
 				l.updateSession(now, p.pub, p.rx, p.tx, online, p.handshake, prevRaw, hadLast)
 			}

@@ -21,7 +21,8 @@ type Bucket struct {
 // Hours keyed by UTC "2006-01-02T15", Months by UTC "2006-01".
 type Peer struct {
 	IP     string             `json:"ip"`
-	Kind   string             `json:"kind"` // awg or wg, remembered so peers missing from a live dump keep their protocol
+	Kind   string             `json:"kind"`            // awg or wg, remembered so peers missing from a live dump keep their protocol
+	Iface  string             `json:"iface,omitempty"` // interface the counters below were last read from
 	Rx     int64              `json:"rx"`
 	Tx     int64              `json:"tx"`
 	Hours  map[string]*Bucket `json:"hours"`
@@ -101,30 +102,11 @@ func saveLedger(path string, l *Ledger) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Sync(); err != nil { // flush before the rename so a power cut can't leave an empty ledger
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, path) // atomic replace
+	return writeAtomic(path, b, 0o600)
 }
 
 // reset-safe: a counter below its last value means a restart, so the value itself is the delta.
-func (l *Ledger) addDelta(now time.Time, pub, ip string, rx, tx int64) {
+func (l *Ledger) addDelta(now time.Time, loc *time.Location, pub, ip string, rx, tx int64) {
 	var drx, dtx int64
 	_, seenBefore := l.Last[pub]
 	if last, seen := l.Last[pub]; !seen {
@@ -150,11 +132,11 @@ func (l *Ledger) addDelta(now time.Time, pub, ip string, rx, tx int64) {
 	p.IP = ip
 	p.Rx += drx
 	p.Tx += dtx
-	// a peer's first reading is however much it transferred before tally saw it, so it counts
-	// towards the lifetime total but must not land in today's or this month's bucket
+	// a first reading predates tally: it belongs in the total, not in today or this month
 	if seenBefore {
+		// hours stay UTC so any zone can be recomputed; months follow the configured one
 		addBucket(p.Hours, now.UTC().Format("2006-01-02T15"), drx, dtx)
-		addBucket(p.Months, now.UTC().Format("2006-01"), drx, dtx)
+		addBucket(p.Months, now.In(loc).Format("2006-01"), drx, dtx)
 	}
 	l.Last[pub] = [2]int64{rx, tx}
 }
@@ -238,9 +220,11 @@ type Row struct {
 func (l *Ledger) rows(now time.Time, loc *time.Location, selMonth string, byPub, byIP map[string]string) []Row {
 	// hour keys are UTC and sort chronologically, so today is a plain string range instead of a parse per bucket
 	local := now.In(loc)
+	// the next local midnight, not "+24h": a DST day is 23 or 25 hours long
 	dayStart := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	dayEnd := time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, loc)
 	firstHour := dayStart.UTC().Format("2006-01-02T15")
-	lastHour := dayStart.Add(24*time.Hour - time.Nanosecond).UTC().Format("2006-01-02T15")
+	endHour := dayEnd.UTC().Format("2006-01-02T15")
 	rows := make([]Row, 0, len(l.Peers))
 	for pub, p := range l.Peers {
 		name := byPub[pub]
@@ -258,7 +242,7 @@ func (l *Ledger) rows(now time.Time, loc *time.Location, selMonth string, byPub,
 		}
 		var dRx, dTx int64
 		for hk, b := range p.Hours {
-			if hk >= firstHour && hk <= lastHour {
+			if hk >= firstHour && hk < endHour {
 				dRx += b.Rx
 				dTx += b.Tx
 			}

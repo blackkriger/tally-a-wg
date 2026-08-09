@@ -14,7 +14,7 @@ var base = time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 // snap folds one raw counter reading into the ledger the way collectOnce does.
 func snap(l *Ledger, now time.Time, rx, tx int64, hs int64) {
 	prevRaw, hadLast := l.Last[pub]
-	l.addDelta(now, pub, "10.0.0.2", rx, tx)
+	l.addDelta(now, time.UTC, pub, "10.0.0.2", rx, tx)
 	online := hs > 0 && now.Unix()-hs < onlineSecs
 	l.updateSession(now, pub, rx, tx, online, hs, prevRaw, hadLast)
 }
