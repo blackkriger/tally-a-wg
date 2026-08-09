@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -33,13 +35,30 @@ type release struct {
 	} `json:"assets"`
 }
 
-var httpClient = &http.Client{Timeout: 60 * time.Second}
+// no blanket timeout: it would cover the body too, and an archive needs longer than JSON.
+var httpClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	},
+}
 
-// parseVersion turns "v0.6.1" into comparable numbers; ok is false for anything else.
+const (
+	metaTimeout     = 60 * time.Second
+	downloadTimeout = 10 * time.Minute // matches the write deadline the page holds open
+)
+
+// parseVersion stays lenient: a tag it cannot read switches updates off for everyone.
 func parseVersion(s string) ([3]int, bool) {
 	var out [3]int
-	parts := strings.Split(strings.TrimPrefix(strings.TrimSpace(s), "v"), ".")
-	if len(parts) != 3 {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "v"), "V")
+	if i := strings.IndexAny(s, "-+"); i >= 0 { // drop a pre-release or build suffix
+		s = s[:i]
+	}
+	parts := strings.Split(s, ".")
+	if len(parts) == 0 || len(parts) > 3 {
 		return out, false
 	}
 	for i, p := range parts {
@@ -69,8 +88,12 @@ func newerThanRunning(tag string) bool {
 	return false
 }
 
-func fetch(url string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+func fetch(url string) ([]byte, error) { return fetchWithin(url, metaTimeout) }
+
+func fetchWithin(url string, d time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +164,18 @@ func verifySum(archive []byte, sums []byte, name string) error {
 	return nil
 }
 
+// readExactly fails loudly past the cap: a truncated binary would only die on the next start.
+func readExactly(r io.Reader, name string) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, maxDownload+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxDownload {
+		return nil, fmt.Errorf("the binary in %s is larger than %d bytes", name, maxDownload)
+	}
+	return b, nil
+}
+
 // binaryFromArchive returns the single executable the release ships.
 func binaryFromArchive(name string, blob []byte) ([]byte, error) {
 	if strings.HasSuffix(name, ".zip") {
@@ -157,7 +192,7 @@ func binaryFromArchive(name string, blob []byte) ([]byte, error) {
 				return nil, err
 			}
 			defer rc.Close()
-			return io.ReadAll(io.LimitReader(rc, maxDownload))
+			return readExactly(rc, name)
 		}
 		return nil, fmt.Errorf("%s holds no file", name)
 	}
@@ -177,13 +212,20 @@ func binaryFromArchive(name string, blob []byte) ([]byte, error) {
 			return nil, err
 		}
 		if h.Typeflag == tar.TypeReg {
-			return io.ReadAll(io.LimitReader(tr, maxDownload))
+			return readExactly(tr, name)
 		}
 	}
 }
 
+var updating sync.Mutex
+
 // selfUpdate downloads the newest release, checks it against SHA256SUMS and swaps the running binary.
 func selfUpdate() (string, error) {
+	if !updating.TryLock() { // a second click must not race the first into the same temp file
+		return "", fmt.Errorf("an update is already running")
+	}
+	defer updating.Unlock()
+
 	rel, err := latestRelease()
 	if err != nil {
 		return "", err
@@ -195,7 +237,7 @@ func selfUpdate() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	archive, err := fetch(archiveURL)
+	archive, err := fetchWithin(archiveURL, downloadTimeout)
 	if err != nil {
 		return "", err
 	}
@@ -219,15 +261,53 @@ func selfUpdate() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	tmp := self + ".new"
-	if err := os.WriteFile(tmp, bin, 0o755); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, self); err != nil { // rename over a running binary is fine on unix
-		os.Remove(tmp)
+	if err := swapBinary(self, bin); err != nil {
 		return "", err
 	}
 	return rel.Tag, nil
+}
+
+// swapBinary installs bin at self, keeping the old one until the new one proves it runs.
+func swapBinary(self string, bin []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(self), ".tallyawg-update-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op once the rename succeeded
+	if _, err := tmp.Write(bin); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, 0o755); err != nil {
+		return err
+	}
+	// run the downloaded binary before trusting it: a truncated or mispackaged file dies here, not on the next boot
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, tmpName, "version").CombinedOutput(); err != nil {
+		return fmt.Errorf("the downloaded binary does not run (%v): %s", err, strings.TrimSpace(string(out)))
+	}
+
+	backup := self + ".old"
+	_ = os.Remove(backup)
+	if err := os.Link(self, backup); err != nil && !os.IsNotExist(err) {
+		backup = "" // no backup possible, carry on — the swap itself is still atomic
+	}
+	if err := os.Rename(tmpName, self); err != nil { // rename over a running binary is fine on unix
+		return err
+	}
+	if backup != "" {
+		_ = os.Remove(backup)
+	}
+	return nil
 }
 
 // checkCache keeps the GitHub lookup off the render path: the page asks on every refresh.

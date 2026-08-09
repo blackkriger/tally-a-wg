@@ -12,12 +12,22 @@ import (
 )
 
 func TestParseVersion(t *testing.T) {
-	for _, s := range []string{"v0.6.1", "0.6.1", " v0.6.1 "} {
-		if got, ok := parseVersion(s); !ok || got != [3]int{0, 6, 1} {
-			t.Errorf("parseVersion(%q) = %v, %v", s, got, ok)
+	// lenient on purpose: a tag it cannot read would silently switch updates off
+	for s, want := range map[string][3]int{
+		"v0.6.1":       {0, 6, 1},
+		"0.6.1":        {0, 6, 1},
+		" v0.6.1 ":     {0, 6, 1},
+		"V0.6.1":       {0, 6, 1},
+		"v0.7.0-rc1":   {0, 7, 0},
+		"v1.2.3+build": {1, 2, 3},
+		"v1.2":         {1, 2, 0},
+		"2":            {2, 0, 0},
+	} {
+		if got, ok := parseVersion(s); !ok || got != want {
+			t.Errorf("parseVersion(%q) = %v, %v; want %v", s, got, ok, want)
 		}
 	}
-	for _, s := range []string{"", "v1.2", "v1.2.3.4", "v1.2.x", "latest", "v-1.2.3"} {
+	for _, s := range []string{"", "v1.2.3.4", "v1.2.x", "latest", "v-1.2.3"} {
 		if _, ok := parseVersion(s); ok {
 			t.Errorf("parseVersion(%q) should be rejected", s)
 		}
