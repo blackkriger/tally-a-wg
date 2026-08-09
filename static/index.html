@@ -97,7 +97,7 @@
           padding:2px 6px; border-radius:6px; opacity:0; transition:opacity .12s, color .12s; }
   tr:hover .dots, .dots.open, .dots:focus-visible { opacity:1; }
   .dots:hover { color:var(--fg); background:var(--hover); }
-  @media (hover:none) { .dots { opacity:1; } } /* nothing hovers on a touch screen */
+  @media (hover:none) { .dots, .addbtn { opacity:1; } } /* nothing hovers on a touch screen */
   /* fixed and parented to <body>: the scrolling table would otherwise clip it on the last rows */
   .menu { position:fixed; z-index:20; min-width:170px; padding:4px;
           background:var(--bg); border:1px solid var(--line); border-radius:9px;
@@ -125,7 +125,8 @@
   .newname:focus, .step:focus-within { border-color:var(--accent); }
   .addhint { color:var(--muted); font-size:12px; }
   .addbtn { border:0; background:transparent; color:var(--muted); cursor:pointer; font-size:17px;
-            line-height:1; padding:2px 7px; border-radius:6px; }
+            line-height:1; padding:2px 7px; border-radius:6px; opacity:0; transition:opacity .12s, color .12s; }
+  tr.addrow:hover .addbtn, .addbtn:focus-visible { opacity:1; }
   .addbtn:hover { color:var(--accent); background:var(--hover); }
   .bar { height:5px; border-radius:3px; background:var(--bar-bg); margin-top:5px; overflow:hidden; min-width:90px; }
   .bar>span { display:block; height:100%; background:var(--accent); }
