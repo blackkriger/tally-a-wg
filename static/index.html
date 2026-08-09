@@ -7,12 +7,12 @@
 <style>
   :root {
     --bg:#ffffff; --fg:#1b1b1b; --muted:#8a8a8a; --line:#ececec; --hover:#f7f7f7;
-    --accent:#d32f2f; --bar-bg:#efefef; --on:#1aa251;
+    --accent:#d32f2f; --bar-bg:#efefef; --on:#1aa251; --on-accent:#ffffff;
     --ctrl:#f1f1f1; --ctrl-fg:#555; --ctrl-bd:#dcdcdc;
   }
   html[data-theme="dark"] {
     --bg:#12161d; --fg:#e8e8e8; --muted:#7e8aa0; --line:#222c3a; --hover:#171e29;
-    --accent:#ff6b6b; --bar-bg:#222c3a; --on:#3ddc84;
+    --accent:#ff6b6b; --bar-bg:#222c3a; --on:#3ddc84; --on-accent:#12161d;
     --ctrl:#1c2531; --ctrl-fg:#9fb0c8; --ctrl-bd:#2a3547;
   }
   * { box-sizing:border-box; }
@@ -25,14 +25,14 @@
   .upd { margin-left:8px; font-size:12px; font-weight:500; letter-spacing:0; vertical-align:middle; color:var(--accent); }
   .upd button { border:1px solid var(--accent); background:transparent; color:var(--accent); font:inherit;
                 cursor:pointer; border-radius:6px; padding:2px 9px; margin-right:6px; }
-  .upd button:hover:not(:disabled) { background:var(--accent); color:#fff; }
+  .upd button:hover:not(:disabled) { background:var(--accent); color:var(--on-accent); }
   .upd button:disabled { opacity:.6; cursor:default; }
   .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   .field { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
   .step { display:inline-flex; align-items:stretch; border:1px solid var(--ctrl-bd); border-radius:7px;
           overflow:hidden; background:var(--ctrl); }
   .step input { width:46px; border:0; background:transparent; color:var(--fg); text-align:center;
-                font:inherit; font-size:13px; padding:5px 4px; }
+                font:inherit; font-size:13px; padding:5px 4px; outline:0; }
   .arrows { display:flex; flex-direction:column; border-left:1px solid var(--ctrl-bd); }
   .arrows button { border:0; background:transparent; color:var(--ctrl-fg); cursor:pointer; line-height:1;
                    font-size:9px; padding:0 6px; height:50%; }
@@ -43,6 +43,7 @@
           flex-wrap:wrap; color:var(--muted); font-size:13px; margin:14px 0; }
   .summary { display:flex; margin:14px 0 6px; border:1px solid var(--line); border-radius:12px;
              overflow:hidden; flex-wrap:wrap; }
+  .summary[hidden] { display:none; } /* an author display beats the UA rule for [hidden] */
   .seg { flex:1 1 360px; display:flex; align-items:center; gap:12px; padding:12px 16px; cursor:pointer;
          transition:background .12s, opacity .2s; }
   .seg + .seg { border-left:1px solid var(--line); }
@@ -68,11 +69,12 @@
   td.total { color:var(--accent); font-weight:700; }
   tr:hover td { background:var(--hover); }
   /* pin value/status columns so changing numbers never reflow the table */
-  #tbl tr > :nth-child(3) { min-width:150px; }                          /* Status         */
-  #tbl tr > :nth-child(4), #tbl tr > :nth-child(5) { min-width:220px; } /* Session, Total */
-  #tbl tr > :nth-child(8) { min-width:120px; }                          /* Year           */
-  #tbl tr > :nth-child(9) { min-width:162px; }                          /* Month          */
-  #tbl tr > :nth-child(10) { min-width:120px; }                         /* Today          */
+  #tbl tr > :nth-child(3) { min-width:178px; }                          /* Peer           */
+  #tbl tr > :nth-child(4) { min-width:150px; }                          /* Status         */
+  #tbl tr > :nth-child(5), #tbl tr > :nth-child(6) { min-width:220px; } /* Session, Total */
+  #tbl tr > :nth-child(9) { min-width:120px; }                          /* Year           */
+  #tbl tr > :nth-child(10) { min-width:162px; }                         /* Month          */
+  #tbl tr > :nth-child(11) { min-width:120px; }                         /* Today          */
   /* flash a cell when its value changes */
   @keyframes bump { 0% { background:color-mix(in srgb, var(--accent) 26%, transparent); } 100% { background:transparent; } }
   td.bump { animation:bump 1.1s ease-out; }
@@ -81,10 +83,50 @@
            border-radius:5px; vertical-align:middle; }
   .badge.awg { color:var(--accent); background:color-mix(in srgb, var(--accent) 15%, transparent); }
   .badge.wg  { color:var(--muted); background:var(--bar-bg); }
-  .ip,.muted,.up { color:var(--muted); }
+  .ip,.up { color:var(--muted); }
   .ep { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
   .stag { font-size:10px; text-transform:uppercase; letter-spacing:.3px; color:var(--muted); margin-bottom:2px; }
   .stag:empty { display:none; }
+  /* actions */
+  .actcol { width:44px; }
+  #tbl.noadmin .actcol, #tbl.noadmin td.act { display:none; }
+  td.act { text-align:left; width:44px; }
+  /* anchor the menu to the button, not to the cell — rows are tall and it would drift away */
+  .actwrap { position:relative; display:inline-block; }
+  .dots { border:0; background:transparent; color:var(--muted); cursor:pointer; font-size:16px; line-height:1;
+          padding:2px 6px; border-radius:6px; opacity:0; transition:opacity .12s, color .12s; }
+  tr:hover .dots, .dots.open, .dots:focus-visible { opacity:1; }
+  .dots:hover { color:var(--fg); background:var(--hover); }
+  @media (hover:none) { .dots { opacity:1; } } /* nothing hovers on a touch screen */
+  /* fixed and parented to <body>: the scrolling table would otherwise clip it on the last rows */
+  .menu { position:fixed; z-index:20; min-width:170px; padding:4px;
+          background:var(--bg); border:1px solid var(--line); border-radius:9px;
+          box-shadow:0 8px 24px rgba(0,0,0,.18); text-align:left; }
+  /* caret pointing back at the ⋯ that opened it; --caret is the button's centre */
+  .menu:before, .menu:after { content:""; position:absolute; left:calc(var(--caret) - 7px); border:7px solid transparent; }
+  .menu:before { bottom:100%; border-bottom-color:var(--line); }
+  .menu:after { bottom:100%; border-bottom-color:var(--bg); margin-bottom:-1px; }
+  .menu.up:before { bottom:auto; top:100%; border-bottom-color:transparent; border-top-color:var(--line); }
+  .menu.up:after { bottom:auto; top:100%; border-bottom-color:transparent; border-top-color:var(--bg); margin:-1px 0 0; }
+  html[data-theme="dark"] .menu { box-shadow:0 8px 24px rgba(0,0,0,.6); }
+  .menu button { display:block; width:100%; text-align:left; border:0; background:transparent; color:var(--fg);
+                 font:inherit; font-size:13px; padding:7px 10px; border-radius:6px; cursor:pointer; white-space:nowrap; }
+  .menu button:hover { background:var(--hover); }
+  .menu button.danger { color:var(--accent); }
+  /* add-peer row: one line plus the bar below it, exactly what fills every other row */
+  tr.addrow td { color:var(--muted); box-sizing:content-box; height:calc(1lh + 10px); }
+  tr.addrow .badge { cursor:pointer; }
+  tr.addrow .badge:hover { outline:1px solid var(--accent); }
+  .newname { border:1px solid var(--ctrl-bd); background:var(--ctrl); color:var(--fg); font:inherit;
+             font-size:13px; padding:3px 8px; border-radius:6px; width:136px; outline:0;
+             transition:border-color .12s; }
+  .newname::placeholder { color:var(--muted); }
+  .newname:hover { border-color:var(--muted); }
+  .newname:focus, .step:focus-within { border-color:var(--accent); }
+  .addhint { color:var(--muted); font-size:12px; }
+  .addbtn { border:0; background:transparent; color:var(--muted); cursor:pointer; font-size:17px;
+            line-height:1; padding:2px 7px; border-radius:6px; }
+  .addbtn:hover { color:var(--accent); background:var(--hover); }
   .bar { height:5px; border-radius:3px; background:var(--bar-bg); margin-top:5px; overflow:hidden; min-width:90px; }
   .bar>span { display:block; height:100%; background:var(--accent); }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle; background:var(--muted); }
@@ -108,7 +150,7 @@
       <span class="field">UTC
         <span class="step">
           <input id="tzin" inputmode="numeric" value="+0" title="hours offset from UTC">
-          <span class="arrows"><button id="tzup" type="button">&#9650;</button><button id="tzdn" type="button">&#9660;</button></span>
+          <span class="arrows"><button id="tzup" type="button" title="UTC offset up">&#9650;</button><button id="tzdn" type="button" title="UTC offset down">&#9660;</button></span>
         </span>
       </span>
       <button class="btn" id="themebtn" title="toggle theme">&#9789;</button>
@@ -125,6 +167,7 @@
   <div class="wrap">
     <table id="tbl" hidden>
       <thead><tr>
+        <th class="actcol"></th>
         <th data-key="proto">Proto<span class="si"></span></th>
         <th data-key="peer">Peer<span class="si"></span></th>
         <th data-key="status">Status<span class="si"></span></th>
@@ -188,13 +231,19 @@ function sessTag(p) {
     ? `${day(a)} ${hhmm(a)} → ${hhmm(b)}`
     : `${day(a)} ${hhmm(a)} → ${day(b)} ${hhmm(b)}`;
 }
-const ipNum = ip => { const p = String(ip).split("."); return p.length === 4 ? (((+p[0])*256+(+p[1]))*256+(+p[2]))*256+(+p[3]) : 0; };
+// padded octets make a string compare order IPv4 numerically; IPv6 falls back to text
+const ipKey = ip => {
+  const s = String(ip || ""), p = s.split(".");
+  return p.length === 4 && p.every(o => o !== "" && Number.isInteger(+o))
+    ? p.map(o => String(+o).padStart(3, "0")).join(".")
+    : s;
+};
 const sortVal = {
   peer: p => p.peer.toLowerCase(),
   status: p => p.online ? 1 : 0,
   session: p => p.session_down + p.session_up,
   total: p => p.down_total + p.up_total,
-  ip: p => ipNum(p.ip),
+  ip: p => ipKey(p.ip),
   endpoint: p => p.endpoint || "",
   today: p => p.down_today + p.up_today,
   month: p => p.down_month + p.up_month,
@@ -202,14 +251,20 @@ const sortVal = {
   proto: p => p.kind === "awg" ? 0 : 1,
 };
 
+let reqSeq = 0;
 async function load() {
+  const seq = ++reqSeq; // the timer and a month/tz click can be in flight together
   try {
     const q = new URLSearchParams({ tz: String(tzVal), month: selMonth });
     const res = await fetch("api/usage?" + q, { cache: "no-store" });
     if (!res.ok) throw new Error(`server said ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    lastData = await res.json();
+    const data = await res.json();
+    if (seq !== reqSeq) return; // a newer request already answered, this one is stale
+    lastData = data;
     render();
-  } catch (e) { $("metaleft").textContent = "error: " + e.message; }
+  } catch (e) {
+    if (seq === reqSeq) $("metaleft").textContent = "error: " + e.message;
+  }
 }
 
 function agg(list) {
@@ -225,7 +280,7 @@ function agg(list) {
 function segHtml(v, list, clickable) {
   const on = list.filter(p => p.online).length, a = agg(list);
   const onEl = on > 0 ? `<span class="on">${on} online</span>` : `${on} online`;
-  return `<div class="seg${clickable ? "" : " info"}"${clickable ? ` data-view="${v}"` : ""}>
+  return `<div class="seg${clickable ? "" : " info"}"${clickable ? ` data-view="${v}" tabindex="0" role="button"` : ""}>
     <span class="badge ${v}">${v === "awg" ? "AWG" : "WG"}</span>
     <span class="seg-meta">${list.length} peers &middot; ${onEl}</span>
     <span class="seg-stats">
@@ -283,6 +338,11 @@ function renderView() {
 
   const max = Math.max(1, ...peers.map(p => p.down_total + p.up_total));
   const prev = prevVals, cur = {}, sameMonth = prevMonth === d.month;
+  // the 5-minute refresh rebuilds every row, so carry a half-typed peer name across it
+  const typing = (() => {
+    const i = $("newname");
+    return i && !i.hidden ? { value: i.value, focused: document.activeElement === i } : null;
+  })();
   const tb = $("rows"); tb.innerHTML = "";
   for (const p of peers) {
     const tot = p.down_total + p.up_total;
@@ -304,7 +364,8 @@ function renderView() {
       : `<span class="dot"></span>${esc(p.handshake || "never")}`;
     const tr = document.createElement("tr");
     tr.innerHTML =
-      `<td>${badge}</td>
+      `<td class="act"><span class="actwrap"><button type="button" class="dots" title="Actions" data-pub="${esc(pk)}" data-name="${esc(p.peer)}">⋯</button></span></td>
+       <td>${badge}</td>
        <td><div class="peer">${esc(p.peer)}</div><div class="bar"><span style="width:${(tot/max*100).toFixed(1)}%"></span></div></td>
        <td>${status}</td>
        <td class="num${bSess}"><div class="stag">${sessTag(p)}</div>${fmt(p.session_down)} ↓ <span class="up">/ ${fmt(p.session_up)} ↑</span></td>
@@ -316,14 +377,28 @@ function renderView() {
        <td class="num${bTday}">${fmt(tday)}</td>`;
     tb.appendChild(tr);
   }
+  // the column goes away, but its cells stay so the column-width pins keep lining up
+  $("tbl").classList.toggle("noadmin", !adminReady);
+  if (adminReady) {
+    tb.appendChild(addRow());
+    if (typing) {
+      editAdd(true);
+      const i = $("newname");
+      i.value = typing.value;
+      if (typing.focused) i.focus();
+    }
+  }
   prevVals = { ...prevVals, ...cur }; // keep peers hidden by the current filter, so their next change still flashes
   prevMonth = d.month;
-  $("tbl").hidden = peers.length === 0;
-  $("empty").hidden = peers.length !== 0;
+  // with no peers yet the add row is the only way to make one, so the table has to stay
+  $("tbl").hidden = peers.length === 0 && !adminReady;
+  $("empty").hidden = peers.length !== 0 || adminReady;
 
   document.querySelectorAll("th .si").forEach(s => s.textContent = "");
   const ath = document.querySelector(`th[data-key="${sortKey}"] .si`);
   if (ath) ath.textContent = sortDir === "asc" ? " ▲" : " ▼";
+  document.querySelectorAll("th[data-key]").forEach(th =>
+    th.setAttribute("aria-sort", th.dataset.key !== sortKey ? "none" : sortDir === "asc" ? "ascending" : "descending"));
 
   $("legend").innerHTML =
     `<div class="legrow"><span><b>↓ down</b> = peer downloaded (server→peer)</span>` +
@@ -360,19 +435,170 @@ $("tzin").onkeydown = e => { if (e.key === "ArrowUp") { e.preventDefault(); setT
 $("mdn").onclick = e => { e.stopPropagation(); navMonth(-1); };
 $("mup").onclick = e => { e.stopPropagation(); navMonth(1); };
 $("summary").addEventListener("click", e => { const s = e.target.closest(".seg[data-view]"); if (!s) return; const v = s.dataset.view; view = view === v ? "all" : v; localStorage.setItem("tally-view", view); renderView(); });
-document.querySelectorAll("th[data-key]").forEach(th => th.addEventListener("click", () => sortBy(th.dataset.key)));
+// sorting and the proto filter live on th/div, so they need the keyboard part of a button
+const activates = e => (e.key === "Enter" || e.key === " ") && !e.target.closest("button");
+$("summary").addEventListener("keydown", e => {
+  const s = e.target.closest(".seg[data-view]");
+  if (!s || !activates(e)) return;
+  e.preventDefault();
+  s.click();
+});
+document.querySelectorAll("th[data-key]").forEach(th => {
+  th.tabIndex = 0; // no role="button": that would cost the header its column semantics
+  th.addEventListener("click", () => sortBy(th.dataset.key));
+  th.addEventListener("keydown", e => { // the month header also holds the ◀▶ buttons
+    if (!activates(e)) return;
+    e.preventDefault();
+    sortBy(th.dataset.key);
+  });
+});
 
 // update banner: checked once per page load; the server caches the GitHub lookup for an hour
 async function checkUpdate() {
   try {
     const d = await (await fetch("api/update", { cache: "no-store" })).json();
     if (!d.available) return;
-    const el = $("upd");
-    el.innerHTML = `<button type="button" id="updbtn">Update</button> ${esc(d.latest)} available`;
-    el.hidden = false;
-    $("updbtn").onclick = applyUpdate;
+    showUpdate(d.latest);
   } catch (e) { /* offline or GitHub is unreachable — the banner just stays hidden */ }
 }
+
+// ---- peer actions --------------------------------------------------------
+let newKind = localStorage.getItem("tally-newkind") || "awg";
+
+function addRow() {
+  const tr = document.createElement("tr");
+  tr.className = "addrow";
+  tr.innerHTML =
+    `<td class="act"><button type="button" class="addbtn" id="addbtn" title="Add a peer">+</button></td>
+     <td><span class="badge ${newKind}" id="newproto" title="Click to switch between AWG and WG">${newKind === "awg" ? "AWG" : "WG"}</span></td>
+     <td><input class="newname" id="newname" placeholder="new peer name" autocomplete="off" size="1" hidden></td>
+     <td colspan="8"><span class="addhint" id="newhint" hidden>Press Enter to create, Esc to cancel</span></td>`;
+  tr.querySelector("#newproto").onclick = () => {
+    newKind = newKind === "awg" ? "wg" : "awg";
+    localStorage.setItem("tally-newkind", newKind);
+    renderView();
+  };
+  tr.querySelector("#addbtn").onclick = () => {
+    editAdd(true);
+    $("newname").focus();
+  };
+  const input = tr.querySelector("#newname");
+  // only Enter creates: a blur fires on any stray click, including the proto badge beside it
+  input.onkeydown = e => { if (e.key === "Enter") createPeer(input.value); };
+  return tr;
+}
+
+// closing always clears, so a reload cannot restore a name that was already created
+function editAdd(on) {
+  const i = $("newname");
+  if (!i) return; // no add row at all when this device may not change anything
+  i.hidden = !on;
+  $("newhint").hidden = !on;
+  if (!on) i.value = "";
+}
+
+let creating = false;
+async function createPeer(name) {
+  name = name.trim();
+  if (!name || creating) return;
+  creating = true;
+  try {
+    const res = await fetch("api/peers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, kind: newKind }),
+    });
+    if (!res.ok) throw new Error((await res.text()).trim() || res.status);
+    editAdd(false); // done with it — on a failure it stays open so the name can be fixed
+    await load();
+  } catch (e) {
+    alert("could not add the peer: " + e.message);
+  } finally { creating = false; }
+}
+
+function closeMenus() {
+  const opener = document.querySelector(".dots.open");
+  document.querySelectorAll(".menu").forEach(m => m.remove());
+  document.querySelectorAll(".dots.open").forEach(d => d.classList.remove("open"));
+  // removing the menu drops focus on <body>; hand it back rather than losing the user's place
+  if (opener && document.activeElement === document.body) opener.focus();
+}
+
+function openMenu(btn) {
+  const pub = btn.dataset.pub, name = btn.dataset.name;
+  closeMenus();
+  btn.classList.add("open");
+  const m = document.createElement("div");
+  m.className = "menu";
+  document.body.appendChild(m);
+  menuActions(m, pub, name);
+  placeMenu(m, btn);
+  m.querySelector("button").focus(); // the menu sits at the end of <body>, so tabbing to it would cross the page
+}
+
+// pin the menu to the button in viewport coordinates, flipping above it when the page ends
+function placeMenu(m, btn) {
+  const b = btn.getBoundingClientRect(), box = m.getBoundingClientRect(), gap = 6;
+  let left = b.left;
+  if (left + box.width > innerWidth - 8) left = innerWidth - box.width - 8;
+  const below = b.bottom + gap, flip = below + box.height > innerHeight - 8 && b.top - gap - box.height > 8;
+  m.classList.toggle("up", flip);
+  m.style.left = Math.max(8, left) + "px";
+  m.style.top = (flip ? b.top - gap - box.height : below) + "px";
+  m.style.setProperty("--caret", (b.left + b.width / 2 - Math.max(8, left)) + "px");
+}
+
+function menuActions(m, pub, name) {
+  m.innerHTML =
+    `<button type="button" data-do="config">Download config</button>
+     <button type="button" data-do="qr">Show QR code</button>
+     <button type="button" class="danger" data-do="delete">Delete peer…</button>`;
+  m.onclick = e => {
+    const act = e.target.closest("button")?.dataset.do;
+    if (!act) return;
+    closeMenus();
+    if (act === "delete") deletePeer(pub, name);
+    else openPeerFile(pub, name, act);
+  };
+}
+
+
+async function authedBlob(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error((await res.text()).trim() || res.status);
+  return res.blob();
+}
+
+async function openPeerFile(pub, name, what) {
+  try {
+    const blob = await authedBlob(`api/peers/${encodeURIComponent(pub)}/${what}`);
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    if (what === "qr") {
+      // the token prompt can outlive the click's user activation, and a blocked tab is silent
+      if (!window.open(url, "_blank")) {
+        const a = document.createElement("a");
+        a.href = url; a.download = name + ".png"; a.click();
+      }
+    } else {
+      const a = document.createElement("a");
+      a.href = url; a.download = name + ".conf"; a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (e) { alert("could not fetch it: " + e.message); }
+}
+
+async function deletePeer(pub, name) {
+  if (!confirm(`Delete "${name}" and its history for good?`)) return;
+  try {
+    const res = await fetch("api/peers/" + encodeURIComponent(pub), { method: "DELETE" });
+    if (!res.ok && res.status !== 204) throw new Error((await res.text()).trim() || res.status);
+    await load();
+  } catch (e) { alert("could not delete it: " + e.message); }
+}
+
+// the server decides from the request address, so there is nothing to hold here
+let adminReady = false;
 
 async function applyUpdate() {
   const btn = $("updbtn");
@@ -380,17 +606,47 @@ async function applyUpdate() {
   btn.textContent = "Updating…";
   try {
     const res = await fetch("api/update", { method: "POST" });
-    const d = await res.json();
+    const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.error || res.status);
     $("upd").textContent = `installed ${d.installed}, restarting…`;
     setTimeout(() => location.reload(), 6000); // give the service time to come back up
   } catch (e) {
-    $("upd").textContent = "update failed: " + e.message;
+    showUpdate(latestTag, "failed: " + e.message); // keep the button so it can be retried
   }
 }
 
-renderTz(); applyTheme(); load(); setInterval(load, 300000); // 5 min, matches the collector
-checkUpdate();
+let latestTag = "";
+function showUpdate(tag, note) {
+  if (!adminReady) return; // installing it needs a token, so don't offer what can't be done
+  latestTag = tag;
+  const el = $("upd");
+  el.innerHTML = `<button type="button" id="updbtn">Update</button> ${esc(note || tag + " available")}`;
+  el.hidden = false;
+  $("updbtn").onclick = applyUpdate;
+}
+
+document.addEventListener("click", e => {
+  const dots = e.target.closest(".dots");
+  if (dots) { dots.classList.contains("open") ? closeMenus() : openMenu(dots); return; }
+  if (!e.target.closest(".menu")) closeMenus();
+});
+// on the document, so Escape closes them from anywhere, not only while they hold focus
+document.addEventListener("keydown", e => { if (e.key === "Escape") { closeMenus(); editAdd(false); } });
+// the menu is pinned to viewport coordinates, so it must not linger once things move
+addEventListener("scroll", closeMenus, true);
+addEventListener("resize", closeMenus);
+
+async function checkAdmin() {
+  try {
+    const d = await (await fetch("api/admin", { cache: "no-store" })).json();
+    adminReady = !!d.admin;
+  } catch (e) { adminReady = false; }
+}
+
+renderTz(); applyTheme();
+// know whether the actions column and the update button belong before drawing either
+checkAdmin().finally(() => { load(); checkUpdate(); });
+setInterval(load, 300000); // 5 min, matches the collector
 </script>
 </body>
 </html>

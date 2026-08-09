@@ -64,9 +64,27 @@ func namesFromFile(path string) (byPub, byIP map[string]string) {
 	return
 }
 
+// configPaths falls back to the up interfaces' configs, so names work with no flags.
+func configPaths(o *Options) []string {
+	if list := splitList(o.Config); len(list) > 0 {
+		return list
+	}
+	ifaces, err := wgInterfaces(o)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, iface := range ifaces {
+		if p := confPathFor(o, iface); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func resolveNames(o *Options) (byPub, byIP map[string]string) {
 	byPub, byIP = map[string]string{}, map[string]string{}
-	for _, cfg := range splitList(o.Config) {
+	for _, cfg := range configPaths(o) {
 		for k, v := range namesFromConfig(cfg) {
 			byPub[k] = v
 		}

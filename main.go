@@ -31,6 +31,8 @@ func main() {
 		runUninstall(args)
 	case "update":
 		runUpdate(args)
+	case "peer":
+		runPeer(args)
 	case "version":
 		printVersion()
 	case "help", "-h", "--help":
@@ -54,6 +56,7 @@ Usage:
   tallyawg install   install as a service (Linux systemd / macOS launchd, root)
   tallyawg uninstall remove the service and the installed binary
   tallyawg update    install the newest release and restart the service
+  tallyawg peer      add <name> [-kind wg|awg] / rm <name> — create or delete a peer
   tallyawg version   print version
 
 Common flags:
@@ -66,6 +69,7 @@ Common flags:
 
 serve also accepts:
   -listen         address for the web page (default: 127.0.0.1:8082)
+  -admin          tunnel address(es) allowed to add/remove peers (the loopback always is)
   -interval       collection interval (default: 5m)
 `)
 }

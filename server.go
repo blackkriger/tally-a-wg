@@ -6,6 +6,10 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -28,6 +32,7 @@ func runServe(args []string) {
 	o := &Options{}
 	fset := newFlags("serve", o)
 	fset.StringVar(&o.Listen, "listen", "127.0.0.1:8082", "address for the web page")
+	fset.StringVar(&o.Admin, "admin", "", "tunnel address(es) allowed to add/remove peers, comma-separated (the loopback always is)")
 	interval := fset.Duration("interval", 5*time.Minute, "collection interval")
 	_ = fset.Parse(args)
 	o.applyDefaults()
@@ -77,7 +82,8 @@ func runServe(args []string) {
 		now := time.Now()
 		selMonth := r.URL.Query().Get("month")
 		if selMonth == "" {
-			selMonth = now.In(loc).Format("2006-01") // the month the viewer is in, matching how today is counted
+			// months are bucketed in the collector's zone, so the default must come from it
+			selMonth = now.In(parseZone(o.TZ)).Format("2006-01")
 		}
 		rows := l.rows(now, loc, selMonth, byPub, byIP)
 		live, backend := liveState(o)
@@ -153,6 +159,64 @@ func runServe(args []string) {
 		})
 	})
 
+	// POST /api/peers creates; DELETE and /config, /qr act on /api/peers/<pubkey>
+	mux.HandleFunc("/api/peers", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST to create a peer", http.StatusMethodNotAllowed)
+			return
+		}
+		if !requireAdmin(w, r, o) {
+			return
+		}
+		var req struct{ Name, Kind string }
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&req); err != nil {
+			http.Error(w, "bad request body", http.StatusBadRequest)
+			return
+		}
+		iface, err := ifaceOfKind(o, req.Kind)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		conf, err := addPeer(o, strings.TrimSpace(req.Name), iface)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": req.Name, "config": conf})
+	})
+
+	mux.HandleFunc("/api/peers/", func(w http.ResponseWriter, r *http.Request) {
+		pub, action, err := peerRoute(r.URL.EscapedPath())
+		if err != nil || pub == "" {
+			http.Error(w, "no peer given", http.StatusBadRequest)
+			return
+		}
+		if !requireAdmin(w, r, o) { // configs hold a private key, so reading is privileged too
+			return
+		}
+		switch {
+		case action == "" && r.Method == http.MethodDelete:
+			if err := removePeer(o, pub); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		case action == "config" && r.Method == http.MethodGet:
+			servePeerFile(w, o, pub, false)
+		case action == "qr" && r.Method == http.MethodGet:
+			servePeerFile(w, o, pub, true)
+		default:
+			http.Error(w, "unsupported", http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/admin", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"admin": isAdmin(o, r)})
+	})
+
 	mux.HandleFunc("/api/update", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		enc := json.NewEncoder(w)
@@ -171,6 +235,13 @@ func runServe(args []string) {
 			http.Error(w, "use GET to check or POST to update", http.StatusMethodNotAllowed)
 			return
 		}
+		if !requireAdmin(w, r, o) {
+			return
+		}
+		// a slow download outlasts WriteTimeout, and a working update would look failed
+		if rc := http.NewResponseController(w); rc != nil {
+			_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
+		}
 		tag, err := selfUpdate()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -187,6 +258,11 @@ func runServe(args []string) {
 		}()
 	})
 
+	if addrs := splitList(o.Admin); len(addrs) > 0 {
+		log.Printf("admin actions allowed from %s and the loopback", strings.Join(addrs, ", "))
+	} else {
+		log.Print("admin actions allowed from the loopback only; add -admin <peer address> to manage from a peer")
+	}
 	log.Printf("tallyawg serving on http://%s (interface=%s, data=%s)", o.Listen, o.Interface, o.Data)
 	srv := &http.Server{
 		Addr:              o.Listen,
@@ -197,6 +273,35 @@ func runServe(args []string) {
 		IdleTimeout:       2 * time.Minute,
 	}
 	log.Fatal(srv.ListenAndServe())
+}
+
+// peerRoute takes the escaped path: a base64 key holds "/", which decoding makes ambiguous.
+func peerRoute(escaped string) (pub, action string, err error) {
+	enc, action, _ := strings.Cut(strings.TrimPrefix(escaped, "/api/peers/"), "/")
+	pub, err = url.PathUnescape(enc)
+	return pub, action, err
+}
+
+func servePeerFile(w http.ResponseWriter, o *Options, pub string, qr bool) {
+	confPath, qrPath, err := peerFiles(o, pub)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	path, ctype := confPath, "text/plain; charset=utf-8"
+	if qr {
+		path, ctype = qrPath, "image/png"
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		http.Error(w, "no stored file for this peer (it predates tally, or qrencode is missing)", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", ctype)
+	if !qr {
+		w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(path)+`"`)
+	}
+	_, _ = w.Write(body)
 }
 
 func maxZero(v int64) int64 {

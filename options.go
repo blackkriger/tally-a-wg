@@ -10,6 +10,7 @@ type Options struct {
 	Data      string
 	TZ        string
 	Listen    string // serve only
+	Admin     string // serve only: tunnel addresses allowed to change things
 }
 
 const defaultData = "/var/lib/tallyawg/ledger.json"

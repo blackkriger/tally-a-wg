@@ -98,7 +98,11 @@ func runInstall(args []string) {
 	}
 	fmt.Println()
 	fmt.Println("done. report:    tallyawg report")
-	fmt.Println("      web page:  http://127.0.0.1:8082  (put it behind your own reverse proxy + auth)")
+	fmt.Println("      web page:  http://127.0.0.1:8082")
+	fmt.Println()
+	fmt.Println("adding and removing peers from the page is allowed from the loopback, so an")
+	fmt.Println("SSH tunnel works out of the box:  ssh -L 8082:127.0.0.1:8082 root@<server>")
+	fmt.Println("to manage it from a peer instead, add -admin <that peer's tunnel address>.")
 }
 
 func runUninstall(args []string) {

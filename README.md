@@ -24,6 +24,7 @@ The web page (`tallyawg serve`) shows totals plus live status — online / last 
 - **Web page** with a light/dark theme, timezone offset, sortable columns, and month-by-month history; your preferences are remembered.
 - Friendly peer names from `# name` comments in the server config, or a names file.
 - A CLI report **and** a built-in web page — pick either or both.
+- **Peer management** — add and remove peers from the page or the CLI: keys, an unused address and the client config with its QR are produced for you. Who may change things is decided by the tunnel address they come from. 
 - **Self-updating** — the page offers new releases and installs them after checking their checksum.
 - Single static binary, stdlib only. Works with both `wg` and `awg`.
 
@@ -35,7 +36,7 @@ tallyawg serve      # collector loop + web page (default 127.0.0.1:8082)
 tallyawg collect    # take one snapshot (e.g. from cron)
 ```
 
-Common flags: `-i <iface>`, `-config <server.conf>` (peer names), `-data <ledger.json>`; `serve` adds `-listen` and `-interval`. `down` = peer download (server → peer), `up` = peer upload.
+Common flags: `-i <iface>`, `-config <server.conf>` (peer names), `-names <file>`, `-wg <binary>`, `-data <ledger.json>`, `-tz <zone>` (UTC, an offset like `+3`, or an IANA name); `serve` adds `-listen`, `-admin` and `-interval`. `report` also takes `-json`. `down` = peer download (server → peer), `up` = peer upload.
 
 ## Install
 
@@ -95,9 +96,39 @@ Prefer to run it by hand, without a service? Just run the binary:
 sudo ./tallyawg serve -config /etc/wireguard/wg0.conf
 ```
 
+## Managing peers
+
+`tallyawg peer add <name>` generates a key pair, claims the lowest unused address in the interface's subnet, appends the peer to the server config, applies it to the running interface and writes a client config next to it — plus a QR image when `qrencode` is installed. Everything it needs (interface, config path, subnet, port, server key, AmneziaWG obfuscation parameters, endpoint) is read from the running setup, so there is nothing to configure:
+
+```sh
+sudo tallyawg peer add phone            # the only interface, or the AmneziaWG one
+sudo tallyawg peer add phone -kind wg   # pick a flavour when both are up
+sudo tallyawg peer rm phone             # also erases its history from the ledger
+```
+
+The same actions live behind the `⋯` menu on each row of the page, along with downloading the config and showing its QR.
+
+### Who may change things
+
+Adding a peer, deleting one, downloading a config or QR, installing an update — is allowed from two places only:
+
+- **the loopback**, so an SSH tunnel works with no configuration at all;
+- **the tunnel addresses you list in `-admin`**, e.g. `-admin 10.9.0.2` 
+
+This leans on WireGuard itself: a packet arriving through the tunnel with source `10.9.0.2` can only have come from the peer whose `AllowedIPs` hold that address, because that is what cryptokey routing enforces. Nothing is stored in the browser and nothing can leak.
+
+```sh
+ssh -L 8082:127.0.0.1:8082 root@your-server   # no -admin needed
+sudo tallyawg serve -admin 10.9.0.2           # or trust peer
+```
+
+Viewing stays open to everyone who can reach the page; only the actions are gated. 
+
+**This is only as good as the firewall.** The address proves something because the page is reachable through the tunnel alone. Bind it wide without the `ufw` rules below and any host that can route to `10.9.0.2` may claim to be it, so keep both together. `X-Forwarded-For` is ignored on purpose, which also means the check cannot work behind a reverse proxy — put the proxy's own authentication in front if you need one.
+
 ### Exposing the page
 
-The page has **no authentication** and shows public keys, addresses, transfer volumes and peer endpoints — the current public IP of every client. That is why it binds to `127.0.0.1:8082` by default.
+Anyone who can open the page can **read** it, and it shows public keys, addresses, transfer volumes and peer endpoints — the current public IP of every client. Only changing things is gated, by address. That is why it binds to `127.0.0.1:8082` by default.
 
 To reach it from your own devices, keep that default and forward the port over SSH:
 
@@ -110,8 +141,10 @@ If you would rather serve it to everyone already on the tunnel, bind wide **and*
 ```sh
 sudo ufw allow in on wg0 to any port 8082 proto tcp
 sudo ufw allow in on awg0 to any port 8082 proto tcp
-sudo tallyawg serve -listen 0.0.0.0:8082
+sudo tallyawg serve -listen 0.0.0.0:8082 -admin 10.9.0.2
 ```
+
+Add a rule for **every** interface you want to reach it from: a peer on an interface with no rule cannot open the page at all, whatever `-admin` says.
 
 Putting it behind a reverse proxy with authentication works too.
 
