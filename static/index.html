@@ -283,7 +283,7 @@ function segHtml(v, list, clickable) {
   const onEl = on > 0 ? `<span class="on">${on} online</span>` : `${on} online`;
   return `<div class="seg${clickable ? "" : " info"}"${clickable ? ` data-view="${v}" tabindex="0" role="button"` : ""}>
     <span class="badge ${v}">${v === "awg" ? "AWG" : "WG"}</span>
-    <span class="seg-meta">${list.length} peers &middot; ${onEl}</span>
+    <span class="seg-meta">${list.length} peers, ${onEl}</span>
     <span class="seg-stats">
       <span><span class="k">total</span><b>${fmt(a.t)}</b></span>
       <span><span class="k">year</span><b>${fmt(a.y)}</b></span>
